@@ -37,11 +37,17 @@
                 aria-label="Passwort kopieren" title="Passwort in die Zwischenablage kopieren">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
         </button>
-        <span id="pw-shown" class="pw-shown" aria-live="polite"></span>
         {% endif %}
         {% if wifi and device.ip and device.mac %}
-        <button class="link" hx-post="devices/{{ device.key }}/set-password" hx-target="#msg" hx-disabled-elt="this"
-                hx-confirm="Gerätespezifisches Passwort auf dem Gerät setzen? Passt das bisherige Passwort nicht, wird danach gefragt.">{{ "Auf eigenes Passwort umstellen" if device.auth_mode == "shared" else "Passwort setzen" }}</button>
+        {% set set_label = "Auf eigenes Passwort umstellen" if device.auth_mode == "shared" else "Passwort setzen" %}
+        <button type="button" class="icon-button" hx-post="devices/{{ device.key }}/set-password" hx-target="#msg"
+                hx-disabled-elt="this" aria-label="{{ set_label }}" title="{{ set_label }}"
+                hx-confirm="Gerätespezifisches Passwort auf dem Gerät setzen? Passt das bisherige Passwort nicht, wird danach gefragt.">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>
+        </button>
+        {% endif %}
+        {% if device.auth_mode == "device" %}
+        <span id="pw-shown" class="pw-shown" aria-live="polite"></span>
         {% endif %}
       </dd>
       <dt>Abgefragt</dt><dd>{% if device.checked_at %}<time datetime="{{ device.checked_at }}" data-local>{{ device.checked_at }}</time>{% else %}noch nie{% endif %}</dd>
@@ -80,7 +86,9 @@
         <p class="hint">Reserviert die IP in OPNsense/Kea unter diesem Namen. Leere IP = nächste freie Adresse.</p>
         <form class="fields" hx-post="devices/{{ device.key }}/reserve" hx-target="#msg" hx-disabled-elt="find button">
           {{ name_input(device.name or device.hostname or '', domain, id="dev-name") }}
-          {{ ip_input("ip", "IP-Adresse", "automatisch…") }}
+          <div id="res-ip" class="field-stack" hx-get="devices/{{ device.key }}/reservation-ip" hx-trigger="load" hx-target="this" hx-swap="outerHTML">
+            {{ ip_input("ip", "IP-Adresse", "automatisch…") }}
+          </div>
           <label class="check"><input type="checkbox" name="apply" value="true" checked> Sofort anwenden</label>
           <button type="submit">Reservieren</button>
         </form>

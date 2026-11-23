@@ -50,6 +50,7 @@ class Reservation:
     hw_address: str
     hostname: str
     description: str = ""
+    client_id: str = ""  # DHCP-Client-ID (Option 61), alternativ zur MAC
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,7 @@ class OPNsenseClient:
                 hw_address=r.get("hw_address", "").lower(),
                 hostname=r.get("hostname", ""),
                 description=r.get("description", ""),
+                client_id=str(r.get("client_id") or "").lower(),
             )
             for r in await self._search("kea/dhcpv4/search_reservation")
         ]

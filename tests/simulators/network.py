@@ -18,6 +18,7 @@ class SimNetwork(httpx.AsyncBaseTransport):
         # mac -> reservierte IP (wird von OPNsense-Sim nach Kea-Reconfigure gesetzt)
         self.dhcp_lookup: Callable[[str], str | None] = lambda mac: None
         self.requests: list[httpx.Request] = []
+        self.ptr: dict[str, str] = {}  # Reverse-DNS (IP -> Name) für die Suche
 
     def add_device(self, device: ShellySim) -> ShellySim:
         device.network = self

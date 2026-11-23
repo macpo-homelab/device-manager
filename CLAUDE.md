@@ -7,6 +7,7 @@ HTTPS-Zertifikate (OPNsense-CA → Shelly), Gen4-Zigbee-Geräte per Zigbee2MQTT 
 Läuft lokal (Entwicklung) und als Home-Assistant-App (Ingress).
 
 ## Stand (2026-11-23)
+- v0.6.5: Suchtreffer mit Spalten der Geräteliste, Reservierungs-Symbol, DNS-Name (PTR) und HTTPS-Zertifikat.
 - v0.6.0: Gerätedetails mit „Standardwerte setzen“, Passwort-Icons (Auge/Kopieren), DHCP-Client-ID aus der Kea-Lease.
 - v0.5.0: F13 Passwort setzen/nachfragen (`PasswordRequired`, Job-`Retry`), F14 Seite „Einstellungen“
   (`EDITABLE_GROUPS`, Tabelle `settings`, `ctx.save_settings`/`reload_settings`), DNS-Link in den Gerätedetails.
@@ -63,7 +64,8 @@ python scripts/publish_addon.py ../ha-apps --commit   # App-Repo füllen (danach
 ## Architektur
 - `src/device_manager/`
   - `config.py`: Settings (Präfix `DM_`, `.env`; in HA `/data/options.json` mit Vorrang)
-  - `context.py`: Fabrik für Adapter. Tests setzen hier Transporte, Bus, TLS-Verifier und `sleep` ein.
+  - `context.py`: Fabrik für Adapter. Tests setzen hier Transporte, Bus, TLS-Verifier, `cert_fetcher`
+    (HTTPS-Zertifikat gefundener Geräte), `resolver` (Reverse-DNS) und `sleep` ein.
   - `shelly/client.py` (RPC, Digest SHA-256), `opnsense/client.py` (Kea + Trust), `z2m/bus.py` (PahoBus/InMemoryBus), `z2m/client.py`
   - `services/identity.py`: Identitätsprüfung (IP/ID/MAC/Lease), Passwörter setzen, prüfen und umstellen
     (`set_device_password`, `switch_to_device_password`)

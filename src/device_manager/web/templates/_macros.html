@@ -13,3 +13,14 @@
          autocomplete="off" spellcheck="false"{% if required %} required{% endif %}>
 </label>
 {%- endmacro %}
+
+{# Icon-Link auf die Weboberfläche eines Geräts (neuer Tab). Ohne DNS-Namen über die IP. #}
+{% macro web_link(dns_name, ip, https=False) -%}
+{%- set url = ("https" if https else "http") ~ "://" ~ dns_name ~ "/" if dns_name else ("http://" ~ ip ~ "/" if ip else "") -%}
+{%- if url -%}
+<a class="icon-button web-link" href="{{ url }}" target="_blank" rel="noopener noreferrer"
+   aria-label="Weboberfläche von {{ dns_name or ip }} öffnen" title="{{ url }} in neuem Tab öffnen">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+</a>
+{%- else %}<span class="muted">–</span>{% endif -%}
+{%- endmacro %}

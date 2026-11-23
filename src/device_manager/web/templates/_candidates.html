@@ -1,15 +1,31 @@
+{% from "_macros.html" import web_link %}
 <section class="panel found" aria-labelledby="found-title">
   <div class="panel-head">
     <h2 id="found-title">Neue Geräte (<span data-found-count>{{ candidates | length }}</span>)</h2>
     <button type="button" class="link" data-dismiss="#found">Liste schließen</button>
   </div>
-  <table>
-    <thead><tr><th>Name</th><th>IP</th><th class="wide">MAC</th><th class="wide">Quelle</th><th></th></tr></thead>
+  <table class="devices candidates">
+    <thead><tr>
+      <th class="wide">Hersteller</th><th>Name</th><th>Firmware</th><th>Web</th><th>Zertifikat</th>
+      <th>Verbindung</th><th><span class="skip">Aktionen</span></th>
+    </tr></thead>
     <tbody>
     {% for c in candidates %}
       <tr data-candidate="{{ c.ip }}">
-        <td>{{ c.name }}</td><td class="mono">{{ c.ip }}</td><td class="wide"><code>{{ c.mac or "–" }}</code></td>
-        <td class="wide">{{ "OPNsense-Lease" if c.source == "lease" else "mDNS" }}</td>
+        <td class="wide">{{ manufacturer(c) }}</td>
+        <td>{{ c.name }}
+          <span class="sub">{{ c.app or "Modell unbekannt" }}{% if c.gen %} · Gen {{ c.gen }}{% endif %}{% if c.mac %} · <span class="mono">{{ c.mac }}</span>{% endif %}</span></td>
+        <td class="nowrap">{{ c.firmware or "–" }}</td>
+        <td class="web-cell">{{ web_link(c.dns_name, c.ip, c.cert_not_after) }}</td>
+        {% set cert = cert_state(c.cert_not_after) %}
+        <td class="{{ 'warn-text' if cert.level == 'warn' else 'error-text' if cert.level == 'error' else '' }}"
+            {% if c.cert_cn %}title="Ausgestellt für {{ c.cert_cn }}"{% endif %}>{{ cert.date if cert.level == "ok" else cert.label }}</td>
+        <td class="nowrap">WLAN{% if c.reserved %}
+          <span class="reserved-icon" role="img" aria-label="IP-Adresse in Kea reserviert" title="IP-Adresse in Kea reserviert">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11Z"/><circle cx="12" cy="10" r="2.2"/></svg>
+          </span>{% endif %}
+          <span class="sub"><span class="mono">{{ c.ip }}</span> · {{ "OPNsense-Lease" if c.source == "lease" else "mDNS" }}</span>
+          {% if c.reserved_ip and not c.reserved %}<span class="sub warn-text">reserviert: <span class="mono">{{ c.reserved_ip }}</span></span>{% endif %}</td>
         <td>
           <div class="fields">
             <a class="button primary" href="provision?host={{ c.ip }}">Mit Assistent einrichten</a>
@@ -17,7 +33,7 @@
           </div></td>
       </tr>
     {% else %}
-      <tr><td colspan="5" class="empty">Keine neuen Shelly-Geräte gefunden. Ist das Gerät im WLAN und eingeschaltet?</td></tr>
+      <tr><td colspan="7" class="empty">Keine neuen Shelly-Geräte gefunden. Ist das Gerät im WLAN und eingeschaltet?</td></tr>
     {% endfor %}
     </tbody>
   </table>

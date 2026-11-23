@@ -99,6 +99,27 @@ def bus() -> InMemoryBus:
     return InMemoryBus()
 
 
+def make_cert_fetcher(network: SimNetwork):  # type: ignore[no-untyped-def]
+    """Ersetzt das Auslesen des HTTPS-Zertifikats: aktives Zertifikat des Simulators, sonst kein HTTPS."""
+
+    async def fetch(host: str, **_: Any) -> CertInfo:
+        device = network.by_ip(host)
+        if device is None or not device.https_active or not device.active_cert:
+            raise ConnectionRefusedError(f"{host}:443 – kein HTTPS aktiv")
+        return cert_info(device.active_cert)
+
+    return fetch
+
+
+def make_resolver(network: SimNetwork):  # type: ignore[no-untyped-def]
+    """Ersetzt Reverse-DNS: Einträge aus network.ptr."""
+
+    async def resolve(ip: str) -> str | None:
+        return network.ptr.get(ip)
+
+    return resolve
+
+
 @pytest.fixture
 def ctx(settings: Settings, store: Store, network: SimNetwork, opnsense: OPNsenseSim, bus: InMemoryBus) -> Context:
     return Context(
@@ -108,6 +129,8 @@ def ctx(settings: Settings, store: Store, network: SimNetwork, opnsense: OPNsens
         opnsense_transport=network,
         mqtt_bus=bus,
         tls_verifier=make_tls_verifier(network),
+        cert_fetcher=make_cert_fetcher(network),
+        resolver=make_resolver(network),
         sleep=fast_sleep,
     )
 

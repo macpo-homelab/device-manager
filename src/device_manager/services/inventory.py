@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from dataclasses import dataclass
+import ssl
+from dataclasses import dataclass, replace
 
 from ..context import Context
+from ..opnsense.client import OPNsenseError
 from ..shelly.client import ShellyError
 from ..steps import step
 from ..store import Device, now
+from ..tls import CertInfo
 from .common import ServiceError, device_from_info, lease_mac
 
 log = logging.getLogger(__name__)
@@ -23,6 +26,20 @@ class Candidate:
     name: str
     source: str  # lease | mdns
     known: bool = False
+    # aus der Geräteabfrage (/shelly) für die Liste „Neue Geräte“
+    app: str = ""
+    gen: int | None = None
+    firmware: str = ""
+    # Ergänzt von enrich_candidates (nur lesend): Kea-Reservierung, DNS-Name (PTR), HTTPS-Zertifikat
+    reserved_ip: str | None = None
+    dns_name: str = ""
+    cert_not_after: str | None = None
+    cert_cn: str = ""
+
+    @property
+    def reserved(self) -> bool:
+        """Die aktuelle IP ist in Kea für dieses Gerät reserviert."""
+        return self.reserved_ip is not None and self.reserved_ip == self.ip
 
 
 async def refresh_device(ctx: Context, host: str) -> Device:
@@ -126,12 +143,61 @@ async def _confirm(ctx: Context, candidates: list[Candidate]) -> list[Candidate]
             log.info("Kandidat %s (%s) verworfen: %s", candidate.ip, candidate.name or "?", exc)
             return None
         known = ctx.store.get_device(info.mac_colon) is not None
-        return Candidate(candidate.ip, info.mac_colon, info.name or info.id, candidate.source, known)
+        return Candidate(
+            candidate.ip,
+            info.mac_colon,
+            info.name or info.id,
+            candidate.source,
+            known,
+            app=info.app or info.model,
+            gen=info.gen,
+            firmware=info.ver,
+        )
 
     results = await asyncio.gather(*(probe(c) for c in candidates))
     confirmed = [c for c in results if c is not None]
     log.info("Suche: %d von %d Kandidat(en) als Shelly bestätigt", len(confirmed), len(candidates))
     return confirmed
+
+
+async def enrich_candidates(ctx: Context, candidates: list[Candidate]) -> list[Candidate]:
+    """Reservierung, DNS-Name und HTTPS-Zertifikat der Suchtreffer ergänzen. Fehler lassen die Felder leer."""
+    if not candidates:
+        return candidates
+    reserved: dict[str, str] = {}  # MAC -> reservierte IP
+    if ctx.settings.opnsense_url:
+        try:
+            with step("Reservierungen der Suchtreffer"):
+                api = ctx.opnsense()
+                reservations = await api.kea_reservations()
+                reserved = {r.hw_address: r.ip_address for r in reservations if r.hw_address}
+                by_client_id = {r.client_id: r.ip_address for r in reservations if r.client_id}
+                if by_client_id:
+                    for lease in await api.kea_leases():
+                        mac, client_id = lease_mac(lease), str(lease.get("client_id") or "").lower()
+                        if mac and client_id in by_client_id:
+                            reserved.setdefault(mac, by_client_id[client_id])
+        except (ServiceError, OPNsenseError) as exc:
+            log.warning("Reservierungen für die Suche nicht abrufbar: %s", exc)
+
+    async def one(c: Candidate) -> Candidate:
+        async def cert() -> CertInfo | None:
+            try:
+                return await ctx.cert_fetcher(c.ip)
+            except (OSError, TimeoutError, ssl.SSLError, ValueError) as exc:
+                log.debug("%s: kein HTTPS-Zertifikat lesbar (%s)", c.ip, type(exc).__name__)
+                return None
+
+        dns_name, info = await asyncio.gather(ctx.resolver(c.ip), cert())
+        return replace(
+            c,
+            reserved_ip=reserved.get(c.mac or ""),
+            dns_name=dns_name or "",
+            cert_not_after=info.not_after.isoformat() if info else None,
+            cert_cn=info.subject_cn if info else "",
+        )
+
+    return list(await asyncio.gather(*(one(c) for c in candidates)))
 
 
 async def discover_mdns(ctx: Context, duration: float = 3.0) -> list[Candidate]:

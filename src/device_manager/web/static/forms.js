@@ -125,7 +125,7 @@
     if (count) count.textContent = String(left);
     const body = found.querySelector("tbody");
     if (body && left === 0) {
-      body.innerHTML = '<tr><td colspan="5" class="empty">Alle gefundenen Geräte sind übernommen.</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" class="empty">Alle gefundenen Geräte sind übernommen.</td></tr>';
     }
   });
 

@@ -9,6 +9,7 @@ from ..context import Context
 from ..jobs import Progress
 from ..opnsense.client import OPNsenseClient, OPNsenseError, Reservation
 from ..shelly.client import format_mac, product_name
+from ..store import Device
 from .common import ServiceError, lease_mac, noop_progress, normalize_hostname, step, validate_name, wait_for_device
 
 DEFAULT_DESCRIPTION = "Shelly"
@@ -47,6 +48,36 @@ def _next_free(start: str, end: str, used: set[str]) -> str:
             return str(current)
         current += 1
     raise ServiceError(f"Keine freie IP im Bereich {start}–{end} ({len(used)} Adressen belegt)")
+
+
+@dataclass(frozen=True)
+class ReservationCheck:
+    """Kea-Reservierung eines Geräts im Vergleich zur aktuellen IP (Gerätedetails)."""
+
+    reservation: Reservation | None
+    current_ip: str | None
+
+    @property
+    def matches(self) -> bool:
+        return self.reservation is not None and self.reservation.ip_address == self.current_ip
+
+
+async def find_reservation(ctx: Context, device: Device) -> ReservationCheck:
+    """Reservierung über die MAC, sonst über die DHCP-Client-ID der Lease suchen (nur lesend)."""
+    with step(f"Reservierung prüfen {device.key}"):
+        if not device.mac:
+            return ReservationCheck(None, device.ip)
+        api = ctx.opnsense()
+        reservations = await api.kea_reservations()
+        found = next((r for r in reservations if r.hw_address == device.mac), None)
+        if found is None and any(r.client_id for r in reservations):
+            client_ids = {
+                str(lease["client_id"]).lower()
+                for lease in await api.kea_leases()
+                if lease_mac(lease) == device.mac and lease.get("client_id")
+            }
+            found = next((r for r in reservations if r.client_id and r.client_id in client_ids), None)
+        return ReservationCheck(found, device.ip)
 
 
 async def next_free_ip(ctx: Context, mac: str = "") -> str:

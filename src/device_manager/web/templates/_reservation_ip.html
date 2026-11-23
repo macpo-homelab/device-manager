@@ -1,0 +1,13 @@
+{% from "_macros.html" import ip_input %}
+<div id="res-ip" class="field-stack">
+  {{ ip_input("ip", "IP-Adresse", "automatisch…", value=value) }}
+  {% if check is not none %}
+  {% if check.matches %}
+  <small class="hint ok-text">Reservierung für diese {{ via }} entspricht der aktuellen IP.</small>
+  {% elif check.reservation %}
+  <small class="hint warn-text">Reserviert ist {{ check.reservation.ip_address }}, aktuell {{ check.current_ip or "unbekannt" }}.</small>
+  {% else %}
+  <small class="hint">Noch keine Reservierung für diese MAC.</small>
+  {% endif %}
+  {% endif %}
+</div>

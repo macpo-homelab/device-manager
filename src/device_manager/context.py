@@ -14,7 +14,7 @@ from .config import EDITABLE_FIELDS, Settings, merge_settings
 from .opnsense.client import OPNsenseClient
 from .shelly.client import ShellyClient, derive_password
 from .store import Device, Store
-from .tls import verify_https
+from .tls import CertInfo, fetch_server_cert, reverse_dns, verify_https
 from .z2m.bus import MqttBus
 from .z2m.client import Z2MError, Zigbee2Mqtt
 
@@ -22,6 +22,8 @@ log = logging.getLogger(__name__)
 
 TlsVerifier = Callable[..., Awaitable[Any]]
 Sleeper = Callable[[float], Awaitable[None]]
+CertFetcher = Callable[[str], Awaitable[CertInfo]]
+Resolver = Callable[[str], Awaitable[str | None]]
 
 
 @dataclass
@@ -32,6 +34,8 @@ class Context:
     opnsense_transport: httpx.AsyncBaseTransport | None = None
     mqtt_bus: MqttBus | None = None
     tls_verifier: TlsVerifier = verify_https
+    cert_fetcher: CertFetcher = fetch_server_cert  # Zertifikat gefundener Geräte (nur lesen)
+    resolver: Resolver = reverse_dns  # DNS-Name gefundener Geräte (PTR)
     sleep: Sleeper = field(default=asyncio.sleep)
     # Einstellungen aus .env/HA-Optionen ohne die Werte der Seite „Einstellungen“
     base_settings: Settings = field(init=False)

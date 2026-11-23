@@ -3,18 +3,19 @@
   {% if error %}
   <p class="error">Installiert: {{ installed or "unbekannt" }}. Verfügbare Versionen konnten nicht abgefragt werden: {{ error }}</p>
   {% else %}
-  <dl class="facts">
-    <dt>Installiert</dt><dd>{{ installed }}</dd>
+  <dl class="fw-versions">
+    <div><dt>Installiert</dt><dd class="mono">{{ installed }}</dd></div>
     {% for stage in ("stable", "beta") %}
-    <dt>Kanal {{ stage }}</dt>
-    <dd>
-      {% if updates.get(stage) %}<span class="warn-text">{{ updates[stage] }} verfügbar</span>
+    <div><dt>{{ stage }}</dt>
+      <dd>{% if updates.get(stage) %}<span class="warn-text mono">{{ updates[stage] }}</span>
         {%- if stage == "stable" and prerelease(updates[stage]) %} <span class="hint">(Vorabversion)</span>{% endif %}
-      {% else %}<span class="muted">keine neuere Version</span>{% endif %}
-    </dd>
+      {% else %}<span class="muted">keine neuere</span>{% endif %}</dd>
+    </div>
     {% endfor %}
   </dl>
+  {% if updates.get("stable") or updates.get("beta") %}
   <p class="hint">„Aktualisieren“ installiert die Version des gewählten Kanals. Startet das Gerät danach nicht von selbst neu,
     bittet der Ablauf um eine Bestätigung.</p>
+  {% endif %}
   {% endif %}
 </div>

@@ -1,5 +1,38 @@
 # Änderungen
 
+## 0.6.6
+
+- Geräteliste und neue Geräte: Statt des DNS-Namens öffnet ein Symbol in der Spalte „Web“ die Weboberfläche des
+  Geräts in einem neuen Tab (über den DNS-Namen, sonst über die IP).
+
+## 0.6.5
+
+- Gefundene neue Geräte: Ist die aktuelle IP in Kea für das Gerät reserviert, zeigt die Spalte Verbindung ein
+  Pin-Symbol. Ist eine andere IP reserviert, steht sie darunter.
+- DNS-Name (per Reverse-DNS) und HTTPS-Zertifikat (Ablaufdatum, ausgestellt für …) werden bei der Suche abgefragt
+  und in der Liste angezeigt.
+
+## 0.6.4
+
+- Gefundene neue Geräte haben dieselben Spalten wie die Geräteliste: Hersteller, Name (mit Modell und MAC),
+  Firmware, DNS-Name, Zertifikat und Verbindung (IP und Fundort).
+
+## 0.6.3
+
+- Geräteliste mit den Spalten Hersteller, Name, Firmware, DNS-Name (Link zur Weboberfläche des Geräts),
+  Zertifikat und Verbindung (WLAN mit IP bzw. Zigbee). IP und MAC stehen in den Gerätedetails.
+
+## 0.6.2
+
+- Passwort im Steckbrief: „Passwort setzen“ ist jetzt ein Stift-Symbol neben Anzeigen und Kopieren.
+
+## 0.6.1
+
+- Gerätedetails, Firmware: installierte Version, stable und beta stehen nebeneinander. Der Hinweis zum
+  Aktualisieren erscheint nur, wenn ein Update verfügbar ist.
+- Name und IP-Reservierung: Entspricht die Kea-Reservierung (über MAC oder Client-ID) der aktuellen IP, ist die
+  IP-Adresse schon eingetragen. Weicht sie ab oder fehlt sie, steht ein Hinweis unter dem Feld.
+
 ## 0.6.0
 
 - Gerätedetails: neuer Abschnitt „Standardwerte setzen“ unter dem HTTPS-Zertifikat. Er setzt die Werte aus den

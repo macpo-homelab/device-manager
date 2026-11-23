@@ -7,6 +7,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from device_manager.services import inventory
 from device_manager.web.app import create_app
 from tests.conftest import device_password, shelly
 from tests.simulators.shelly_sim import ShellySim
@@ -81,6 +82,19 @@ def test_discover_leases_fragment(client, network, opnsense):
     html = client.post("/discover", data={"source": "lease"}).text
     assert "192.168.10.50" in html and "Nur übernehmen" in html and "Mit Assistent einrichten" in html
     assert 'data-candidate="192.168.10.50"' in html
+    # Gleiche Spalten wie die Geräteliste (plus Aktionen)
+    head = html[html.index("<thead>") : html.index("</thead>")]
+    assert re.findall(r"<th[^>]*>([^<]*)</th>", head) == [
+        "Hersteller",
+        "Name",
+        "Firmware",
+        "Web",
+        "Zertifikat",
+        "Verbindung",
+    ]
+    row = html[html.index('data-candidate="192.168.10.50"') :]
+    assert '<td class="wide">Shelly</td>' in row and "a8:03:2a:b1:23:45" in row and "OPNsense-Lease" in row
+    assert re.search(r'<td class="nowrap">\S+</td>', row)  # Firmware aus /shelly
 
 
 def test_discover_hides_known_devices(client, network, opnsense):
@@ -220,6 +234,10 @@ def test_device_page_password_inline_and_apply_label(client, ctx, network):
     row = page[page.index('id="pw"') : page.index("</dd>", page.index('id="pw"'))]
     assert "gerätespezifisch" in row and 'aria-label="Passwort anzeigen"' in row and 'hx-target="#pw-shown"' in row
     assert f'data-copy-password="devices/{sim.mac_colon}/password"' in row and "data-toggle-password" in row
+    # Stift-Icon zum Setzen des Passworts in derselben Zeile (mit Rückfrage)
+    pencil = row[row.index(f'hx-post="devices/{sim.mac_colon}/set-password"') :]
+    assert 'class="icon-button"' in row and 'aria-label="Passwort setzen"' in pencil[:400]
+    assert "hx-confirm=" in pencil[:400] and ">Passwort setzen</button>" not in page
     assert device_password(sim.mac) not in page  # erst auf Klick
     assert "Sofort anwenden</label>" in page and "(Neustart)" not in page
     shown = client.post(f"/devices/{sim.mac_colon}/password").text
@@ -269,11 +287,58 @@ def test_firmware_info_shows_installed_and_available(client, ctx, network):
     page = client.get(f"/devices/{sim.mac_colon}").text
     assert f'hx-get="devices/{sim.mac_colon}/firmware-info"' in page and "data-fw-button" in page
     html = client.get(f"/devices/{sim.mac_colon}/firmware-info").text
-    assert "Installiert</dt><dd>1.8.99-plugmg3prod0" in html
-    assert "2.2.0-beta2 verfügbar" in html and "(Vorabversion)" in html
+    assert '<dl class="fw-versions">' in html  # Installiert, stable, beta nebeneinander
+    assert '<dt>Installiert</dt><dd class="mono">1.8.99-plugmg3prod0' in html
+    assert ">2.2.0-beta2</span>" in html and "(Vorabversion)" in html
     assert 'data-stable="2.2.0-beta2"' in html and 'data-beta=""' in html and 'data-checked="yes"' in html
-    assert "keine neuere Version" in html  # Kanal beta
+    assert "keine neuere" in html  # Kanal beta
+    assert "„Aktualisieren“ installiert" in html  # Hinweis nur, wenn ein Update möglich ist
     assert sim.calls.count("Shelly.Update") == 0  # nur lesend
+
+
+def test_firmware_info_without_update_hides_hint(client, ctx, network):
+    sim = _adopted(client, ctx, network, ver="2.2.0")
+    html = client.get(f"/devices/{sim.mac_colon}/firmware-info").text
+    assert html.count("keine neuere") == 2 and "„Aktualisieren“ installiert" not in html
+
+
+def test_reservation_ip_prefilled_when_reservation_matches(client, ctx, network, opnsense):
+    sim = _adopted(client, ctx, network)
+    page = client.get(f"/devices/{sim.mac_colon}").text
+    # Eigenes Ziel: sonst erbt das Feld hx-target="#msg" vom Formular und landet oben auf der Seite
+    assert f'hx-get="devices/{sim.mac_colon}/reservation-ip" hx-trigger="load" hx-target="this"' in page
+    html = client.get(f"/devices/{sim.mac_colon}/reservation-ip").text
+    assert 'value=""' in html and "Noch keine Reservierung" in html
+
+    job = wait_job(
+        client, client.post(f"/devices/{sim.mac_colon}/reserve", data={"name": "flur", "apply": "true"}).text
+    )
+    assert job["status"] == "ok"
+    html = client.get(f"/devices/{sim.mac_colon}/reservation-ip").text
+    assert f'value="{sim.ip}"' in html and "entspricht der aktuellen IP" in html and "diese MAC" in html
+
+
+def test_reservation_ip_empty_when_reservation_differs(client, ctx, network, opnsense):
+    sim = _adopted(client, ctx, network)
+    job = wait_job(
+        client, client.post(f"/devices/{sim.mac_colon}/reserve", data={"name": "flur", "apply": "false"}).text
+    )
+    assert job["status"] == "ok"
+    html = client.get(f"/devices/{sim.mac_colon}/reservation-ip").text
+    assert 'value=""' in html and "Reserviert ist 192.168.10.100, aktuell 192.168.10.50" in html
+
+
+def test_reservation_found_by_client_id(client, ctx, network, opnsense):
+    sim = _adopted(client, ctx, network)
+    opnsense.reservations["r1"] = {
+        "subnet": "s",
+        "ip_address": sim.ip,
+        "hw_address": "",
+        "client_id": f"01:{sim.mac_colon}",
+        "hostname": "flur",
+    }
+    html = client.get(f"/devices/{sim.mac_colon}/reservation-ip").text
+    assert f'value="{sim.ip}"' in html and "diese Client-ID" in html
 
 
 def test_firmware_info_reports_unreachable_device(client, ctx, network):
@@ -281,3 +346,98 @@ def test_firmware_info_reports_unreachable_device(client, ctx, network):
     sim.online = False
     html = client.get(f"/devices/{sim.mac_colon}/firmware-info").text
     assert 'data-checked="no"' in html and "konnten nicht abgefragt werden" in html and "nicht erreichbar" in html
+
+
+def test_device_list_columns(client, ctx, network):
+    sim = _adopted(client, ctx, network)
+    device = ctx.store.get_device(sim.mac_colon)
+    device.hostname = "flur"
+    ctx.store.upsert_device(device)
+    page = client.get("/").text
+    head = page[page.index('<table class="devices"') : page.index("</thead>")]
+    headers = re.findall(r"<th[^>]*>([^<]*)</th>", head)
+    assert headers == ["Hersteller", "Name", "Firmware", "Web", "Zertifikat", "Verbindung"]
+    row = page[page.index("<tbody>", page.index('<table class="devices"')) : page.index("</tbody>")]
+    assert '<td class="wide">Shelly</td>' in row
+    assert f'href="http://flur.{ctx.settings.dns_domain}/"' in row
+    assert 'class="icon-button web-link"' in row and f">flur.{ctx.settings.dns_domain}<" not in row
+    assert "WLAN" in row and sim.ip in row and sim.mac_colon not in row.replace(f"devices/{sim.mac_colon}", "")
+
+    device.online = 0
+    ctx.store.upsert_device(device)
+    assert "nicht erreichbar" in client.get("/").text
+
+
+def _row(html: str, ip: str) -> str:
+    start = html.index(f'data-candidate="{ip}"')
+    end = html.find("<tr data-candidate=", start + 1)
+    return html[start : end if end != -1 else len(html)]
+
+
+def _self_signed(cn: str, days: int = 100) -> tuple[str, str]:
+    from datetime import UTC, datetime, timedelta
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, cn)])
+    now = datetime.now(UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(1)
+        .not_valid_before(now)
+        .not_valid_after(now + timedelta(days=days))
+        .sign(key, hashes.SHA256())
+    )
+    pem = cert.public_bytes(serialization.Encoding.PEM).decode()
+    key_pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
+    return pem, key_pem
+
+
+def test_discover_shows_reservation_dns_and_certificate(client, ctx, network, opnsense):
+    """Suchtreffer: reservierte IP als Symbol, DNS-Name per PTR, HTTPS-Zertifikat ausgelesen."""
+    sim = shelly(network, mac="A8032AB12345", ip="192.168.10.50")
+    other = shelly(network, mac="A8032AB99999", ip="192.168.10.51")
+    opnsense.add_lease("192.168.10.50", "a8:03:2a:b1:23:45", "shelly1")
+    opnsense.add_lease("192.168.10.51", "a8:03:2a:b9:99:99", "shelly2")
+    opnsense.reservations["r1"] = {
+        "subnet": "s",
+        "ip_address": "192.168.10.50",
+        "hw_address": sim.mac_colon,
+        "hostname": "flur",
+    }
+    opnsense.reservations["r2"] = {
+        "subnet": "s",
+        "ip_address": "192.168.10.99",
+        "hw_address": other.mac_colon,
+        "hostname": "bad",
+    }
+    network.ptr["192.168.10.50"] = "flur.home.lan"
+    sim.active_cert, sim.active_key = _self_signed("flur.home.lan")
+
+    html = client.post("/discover", data={"source": "lease"}).text
+    first, second = _row(html, "192.168.10.50"), _row(html, "192.168.10.51")
+    assert 'aria-label="IP-Adresse in Kea reserviert"' in first
+    assert 'href="https://flur.home.lan/"' in first and 'title="Ausgestellt für flur.home.lan"' in first
+    assert re.search(r">\d{2}\.\d{2}\.\d{4}</td>", first)  # Ablaufdatum wie in der Geräteliste
+    assert 'aria-label="IP-Adresse in Kea reserviert"' not in second
+    assert 'reserviert: <span class="mono">192.168.10.99</span>' in second
+    assert "fehlt" in second and 'href="http://192.168.10.51/"' in second  # kein HTTPS, kein PTR: Link über die IP
+    assert 'class="icon-button web-link"' in first and 'target="_blank"' in first
+    assert ">flur.home.lan<" not in first  # nur Icon, Name im Tooltip/Label
+
+
+async def test_enrich_without_opnsense(ctx, network):
+    """Ohne OPNsense: keine Reservierung, die Suche funktioniert trotzdem."""
+    shelly(network)
+    ctx.settings = ctx.settings.model_copy(update={"opnsense_url": ""})
+    candidate = inventory.Candidate("192.168.10.50", "a8:03:2a:b1:23:45", "x", "mdns")
+    [c] = await inventory.enrich_candidates(ctx, [candidate])
+    assert c.reserved_ip is None and not c.reserved and c.cert_not_after is None and c.dns_name == ""

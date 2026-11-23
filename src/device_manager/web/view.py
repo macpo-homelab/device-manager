@@ -48,11 +48,16 @@ def _parse(ts: str) -> datetime | None:
 def cert_state(device: Device, today: datetime | None = None) -> CertState:
     if device.connection == "zigbee":
         return CertState("none", "–")
-    if not device.cert_not_after:
+    return cert_state_of(device.cert_not_after, today)
+
+
+def cert_state_of(not_after: str | None, today: datetime | None = None) -> CertState:
+    """Zertifikatsstatus aus dem Ablaufdatum (ISO); auch für gefundene, noch nicht übernommene Geräte."""
+    if not not_after:
         return CertState("warn", "fehlt")
-    expires = _parse(device.cert_not_after)
+    expires = _parse(not_after)
     if expires is None:
-        return CertState("none", device.cert_not_after)
+        return CertState("none", not_after)
     date = expires.strftime("%d.%m.%Y")
     days = (expires - (today or datetime.now(UTC))).days
     if days < 0:
@@ -150,3 +155,8 @@ def setting_groups(settings: Settings, base: Settings, overridden: set[str]) -> 
             )
         groups.append((title, rows))
     return groups
+
+
+def manufacturer(device: object) -> str:
+    """Hersteller für Geräteliste und Suchtreffer. Bisher werden nur Shelly-Geräte verwaltet (WLAN und Zigbee)."""
+    return "Shelly"

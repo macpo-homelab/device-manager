@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import web_link %}
 {% block content %}
 <div class="page-head">
   <h1>Geräte <span class="count" id="device-count">({{ rows | length }})</span></h1>
@@ -31,28 +32,32 @@
 <div class="table-wrap">
 <table class="devices" id="devices">
   <thead><tr>
-    <th class="led-cell"><span class="skip">Zustand</span></th><th>Name</th><th>Firmware</th><th class="wide">IP</th>
-    <th>Zertifikat</th><th class="wide">MAC</th>
+    <th class="led-cell"><span class="skip">Zustand</span></th><th class="wide">Hersteller</th><th>Name</th>
+    <th>Firmware</th><th>Web</th><th>Zertifikat</th><th>Verbindung</th>
   </tr></thead>
   <tbody>
   {% for d, st, cert in rows %}
+    {% set wifi = d.connection != "zigbee" %}
     <tr>
       <td class="led-cell"><span class="led {{ st.level }}" role="img" aria-label="{{ st.label }}"
           title="{{ st.label }}{% if st.notes %}: {{ st.notes | join(', ') }}{% endif %}"></span></td>
+      <td class="wide">{{ manufacturer(d) }}</td>
       <td>
         <a href="devices/{{ d.key }}">{{ d.name or d.hostname or d.z2m_name or d.key }}</a>
-        <span class="sub">{{ d.app or d.model or "Modell unbekannt" }}{% if d.gen %} · Gen {{ d.gen }}{% endif %} · {{ "Zigbee" if d.connection == "zigbee" else "WLAN" }}{% if d.online == 0 %} · <span class="error-text">nicht erreichbar</span>{% endif %}</span>
+        <span class="sub">{{ d.app or d.model or "Modell unbekannt" }}{% if d.gen %} · Gen {{ d.gen }}{% endif %}</span>
       </td>
       <td class="nowrap">
         {{ d.firmware or "–" }}
         {% if st.update %}<span class="sub warn-text">Update {{ st.update }} verfügbar</span>{% endif %}
       </td>
-      <td class="mono wide">{{ d.ip or "–" }}</td>
+      <td class="web-cell">{% if wifi %}{{ web_link(d.hostname ~ ("." ~ domain if domain else "") if d.hostname else "", d.ip, d.cert_not_after) }}{% else %}<span class="muted">–</span>{% endif %}</td>
       <td class="{{ 'warn-text' if cert.level == 'warn' else 'error-text' if cert.level == 'error' else '' }}">{{ cert.date if cert.level == "ok" else cert.label }}</td>
-      <td class="wide"><code>{{ d.mac or "–" }}</code></td>
+      <td class="nowrap">{{ "Zigbee" if not wifi else "WLAN" }}
+        {% if d.online == 0 %}<span class="sub error-text">nicht erreichbar</span>
+        {% elif wifi and d.ip %}<span class="sub mono">{{ d.ip }}</span>{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="empty">Noch keine Geräte. Suche oben nach Geräten im Netz, übernimm eins per IP
+    <tr><td colspan="7" class="empty">Noch keine Geräte. Suche oben nach Geräten im Netz, übernimm eins per IP
       oder <a href="provision">richte ein neues Gerät ein</a>.</td></tr>
   {% endfor %}
   </tbody>

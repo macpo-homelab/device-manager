@@ -201,6 +201,8 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
             stage=stage,
             mqtt=ctx.mqtt_bus is not None,
             ntp=ctx.settings.shelly_ntp_server,
+            domain=ctx.settings.dns_domain,
+            manufacturer=view.manufacturer,
         )
 
     @app.get("/devices/{key}", response_class=HTMLResponse)
@@ -231,6 +233,21 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
             log_user_error(request, exc)
             client_id = None
         return render(request, "_lease_info.html", client_id=client_id)
+
+    @app.get("/devices/{key}/reservation-ip", response_class=HTMLResponse)
+    async def reservation_ip(request: Request, key: str) -> HTMLResponse:
+        """IP-Feld der Reservierung: aktuelle IP vorbelegen, wenn die Kea-Reservierung ihr entspricht (nur lesend)."""
+        ctx = ctx_of(request)
+        device = device_or_404(request, key)
+        check = None
+        if ctx.settings.opnsense_url:
+            try:
+                check = await reservation.find_reservation(ctx, device)
+            except USER_ERRORS as exc:
+                log_user_error(request, exc)
+        value = check.current_ip if check is not None and check.matches else ""
+        via = "Client-ID" if check and check.reservation and check.reservation.hw_address != device.mac else "MAC"
+        return render(request, "_reservation_ip.html", check=check, value=value or "", via=via)
 
     @app.get("/devices/{key}/firmware-info", response_class=HTMLResponse)
     async def firmware_info(request: Request, key: str) -> HTMLResponse:
@@ -358,8 +375,15 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
         except USER_ERRORS as exc:
             return render(request, "_message.html", error=log_user_error(request, exc))
         # Nur neue Geräte anzeigen; Geräte aus dem Inventar stehen schon in der Geräteliste
-        new = [c for c in candidates if not c.known]
-        return render(request, "_candidates.html", candidates=new, hidden=len(candidates) - len(new))
+        new = await inventory.enrich_candidates(ctx, [c for c in candidates if not c.known])
+        return render(
+            request,
+            "_candidates.html",
+            candidates=new,
+            hidden=len(candidates) - len(new),
+            manufacturer=view.manufacturer,
+            cert_state=view.cert_state_of,
+        )
 
     @app.post("/refresh", response_class=HTMLResponse)
     async def refresh(request: Request) -> HTMLResponse:

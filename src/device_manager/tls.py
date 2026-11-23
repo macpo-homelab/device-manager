@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import ssl
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,6 +46,38 @@ def key_matches_cert(cert_pem: str, key_pem: str) -> bool:
     fmt = serialization.PublicFormat.SubjectPublicKeyInfo
     enc = serialization.Encoding.DER
     return bool(cert.public_key().public_bytes(enc, fmt) == key.public_key().public_bytes(enc, fmt))
+
+
+async def fetch_server_cert(host: str, *, port: int = 443, timeout: float = 3.0) -> CertInfo:
+    """Liest das HTTPS-Zertifikat eines Hosts nur aus (ohne Prüfung, es werden keine Daten gesendet).
+
+    Für die Anzeige bei gefundenen Geräten; Fehler (kein HTTPS, Timeout) werden an den Aufrufer weitergereicht.
+    """
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # nur anzeigen, nichts vertrauen
+    reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port, ssl=ctx), timeout)
+    try:
+        ssl_obj: ssl.SSLObject = writer.get_extra_info("ssl_object")
+        der = ssl_obj.getpeercert(binary_form=True)
+        if der is None:
+            raise ssl.SSLError("Kein Server-Zertifikat erhalten")
+        return cert_info(ssl.DER_cert_to_PEM_cert(der))
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except (ssl.SSLError, ConnectionError):
+            pass
+
+
+async def reverse_dns(ip: str, *, timeout: float = 2.0) -> str | None:
+    """PTR-Abfrage (DNS-Name zu einer IP). None, wenn kein Eintrag oder keine Antwort."""
+    try:
+        name, _, _ = await asyncio.wait_for(asyncio.to_thread(socket.gethostbyaddr, ip), timeout)
+    except (OSError, TimeoutError):
+        return None
+    return name.rstrip(".") or None
 
 
 async def verify_https(
