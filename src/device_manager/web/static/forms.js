@@ -111,6 +111,24 @@
     provisionSteps();
   });
 
+  // Übernahme fertig (HX-Trigger vom Job): Gerät aus der Liste der gefundenen Geräte entfernen.
+  // Die Geräteliste lädt sich über hx-trigger="device-adopted from:body" selbst neu.
+  document.body.addEventListener("device-adopted", (event) => {
+    const ip = event.detail && event.detail.ip;
+    const found = document.querySelector("#found");
+    if (!ip || !found) return;
+    found.querySelectorAll("tr[data-candidate]").forEach((row) => {
+      if (row.dataset.candidate === ip) row.remove();
+    });
+    const count = found.querySelector("[data-found-count]");
+    const left = found.querySelectorAll("tr[data-candidate]").length;
+    if (count) count.textContent = String(left);
+    const body = found.querySelector("tbody");
+    if (body && left === 0) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">Alle gefundenen Geräte sind übernommen.</td></tr>';
+    }
+  });
+
   // Kleine Bedienhelfer: Kopieren, Liste schließen, Ansicht neu laden
   document.addEventListener("click", (event) => {
     const el = event.target instanceof Element ? event.target.closest("[data-copy],[data-dismiss],[data-reload]") : null;

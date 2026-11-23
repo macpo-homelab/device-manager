@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-  <h1>Geräte <span class="count">({{ rows | length }})</span></h1>
+  <h1>Geräte <span class="count" id="device-count">({{ rows | length }})</span></h1>
   <a class="button primary" href="provision">Neues Gerät einrichten</a>
 </div>
 
@@ -26,6 +26,8 @@
 <div id="msg" class="msg" aria-live="polite"></div>
 <div id="found"></div>
 
+<div id="device-list" hx-get="./" hx-trigger="device-adopted from:body" hx-select="#device-list"
+     hx-select-oob="#device-count" hx-swap="outerHTML">
 <div class="table-wrap">
 <table class="devices" id="devices">
   <thead><tr>
@@ -60,6 +62,7 @@
   {% if last_checked %}Status zuletzt abgefragt: <time datetime="{{ last_checked }}" data-local>{{ last_checked }}</time>.
   Updates beziehen sich auf den Kanal {{ stage }}.{% else %}Status noch nicht abgefragt – „Status aller Geräte abfragen“ prüft Erreichbarkeit, Firmware und Zertifikate.{% endif %}
 </p>
+</div>
 
 <section class="panel maintenance" aria-labelledby="maint-title">
   <div>

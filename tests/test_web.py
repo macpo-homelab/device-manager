@@ -1,5 +1,6 @@
 """Web-Oberfläche: End-to-End über HTTP mit Simulatoren (Seiten, Formulare, Jobs)."""
 
+import json
 import re
 import time
 
@@ -79,6 +80,39 @@ def test_discover_leases_fragment(client, network, opnsense):
     opnsense.add_lease("192.168.10.50", "a8:03:2a:b1:23:45", "shellyplus1")
     html = client.post("/discover", data={"source": "lease"}).text
     assert "192.168.10.50" in html and "Nur übernehmen" in html and "Mit Assistent einrichten" in html
+    assert 'data-candidate="192.168.10.50"' in html
+
+
+def test_discover_hides_known_devices(client, network, opnsense):
+    """F1: Die Suche listet nur neue Geräte, Geräte aus dem Inventar werden ausgeblendet."""
+    shelly(network, mac="A8032AB12345", ip="192.168.10.50")
+    shelly(network, mac="A8032AB99999", ip="192.168.10.51")
+    opnsense.add_lease("192.168.10.50", "a8:03:2a:b1:23:45", "shelly1")
+    opnsense.add_lease("192.168.10.51", "a8:03:2a:b9:99:99", "shelly2")
+    assert wait_job(client, client.post("/adopt", data={"host": "192.168.10.50"}).text)["status"] == "ok"
+
+    html = client.post("/discover", data={"source": "lease"}).text
+    assert 'data-candidate="192.168.10.51"' in html
+    assert 'data-candidate="192.168.10.50"' not in html
+    assert "1 gefundene(s) Gerät(e) schon im Inventar" in html
+
+
+def test_adopt_job_triggers_list_update(client, network):
+    """F1/F2: Nach der Übernahme meldet der Job das Gerät, damit Geräte- und Suchliste sich aktualisieren."""
+    shelly(network)
+    html = client.post("/adopt", data={"host": "192.168.10.50"}).text
+    job = wait_job(client, html)
+    assert job["status"] == "ok"
+    r = client.get(f"/jobs/{job['id']}")
+    assert json.loads(r.headers["HX-Trigger"]) == {"device-adopted": {"ip": "192.168.10.50"}}
+    index = client.get("/").text
+    assert 'hx-trigger="device-adopted from:body"' in index and 'id="device-count"' in index
+
+
+def test_failed_adopt_triggers_nothing(client):
+    job = wait_job(client, client.post("/adopt", data={"host": "192.168.10.99"}).text)
+    assert job["status"] == "error"
+    assert "HX-Trigger" not in client.get(f"/jobs/{job['id']}").headers
 
 
 def test_provision_wizard(client, network, opnsense):

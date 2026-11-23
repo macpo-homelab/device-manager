@@ -26,7 +26,7 @@
 
 | Anforderung | Testdatei(en) | Wichtige Fälle |
 |-------------|---------------|----------------|
-| F1 Inventar | `test_f1_inventory.py` | Geräteinfo → Inventar, manuelle Felder bleiben erhalten, Gen1 abgelehnt, Discovery über Leases, bekannte Geräte, nicht erreichbare Geräte, Zigbee-Abgleich ohne Duplikate |
+| F1 Inventar | `test_f1_inventory.py`, `test_web.py` | Geräteinfo → Inventar, manuelle Felder bleiben erhalten, Gen1 abgelehnt, Discovery über Leases, bekannte Geräte (in der Suche ausgeblendet, `test_web.py`), nicht erreichbare Geräte, Zigbee-Abgleich ohne Duplikate, Geräte- und Suchliste nach Übernahme aktualisiert (`test_web.py`) |
 | F2 Übernehmen | `test_f2_adopt.py`, `test_security.py` | Gerätespezifisches Passwort setzen (ha1 korrekt, je Gerät verschieden), vorhandenes Geräte-Passwort, gemeinsames Altpasswort + Umstellung, fremdes Passwort → Fehler, Idempotenz, Passwort anzeigen (nur per POST, no-store), keine abgeleiteten Passwörter in Logs |
 | F3 Reservierung | `test_f3_reservation.py` | Nächste freie IP (Reservierungen + Leases), richtiges Subnetz, manuelle IP, Konflikt, eigener Lease ist kein Konflikt, Idempotenz, Update bestehender Reservierung, Hostname eindeutig/gültig, Bereich erschöpft, falsche Credentials, sofort anwenden (Neustart → neue IP) |
 | F4 Firmware | `test_f4_firmware.py` | stable, beta, kein Update, mit Auth, Gerät kommt nicht zurück (Timeout), ungültiger Kanal |

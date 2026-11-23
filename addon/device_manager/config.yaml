@@ -1,5 +1,5 @@
 name: Device Manager
-version: "0.4.1"
+version: "0.4.2"
 slug: device_manager
 description: Geräte im Heimnetz verwalten – Shelly-Geräte übernehmen, IP in OPNsense reservieren, Firmware und HTTPS-Zertifikate verwalten, Gen4-Zigbee-Geräte aktualisieren
 arch:

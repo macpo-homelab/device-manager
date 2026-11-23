@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -27,7 +28,7 @@ from ..services import certificate, defaults, firmware, identity, inventory, pro
 from ..services.common import ServiceError
 from ..shelly.client import ShellyError
 from ..steps import describe_error
-from ..store import Store
+from ..store import Device, Store
 from ..z2m.bus import PahoBus
 from ..z2m.client import Z2MError
 from . import view
@@ -251,7 +252,11 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
         job: Job | None = request.app.state.jobs.jobs.get(job_id)
         if job is None:
             raise HTTPException(404, "Job nicht gefunden")
-        return render(request, "_job.html", job=job)
+        response = render(request, "_job.html", job=job)
+        if job.status == "ok" and isinstance(job.result, Device) and job.result.ip:
+            # Übernahme fertig: Geräteliste neu laden, Treffer aus der Suchliste entfernen (forms.js)
+            response.headers["HX-Trigger"] = json.dumps({"device-adopted": {"ip": job.result.ip}})
+        return response
 
     @app.post("/jobs/{job_id}/action", response_class=HTMLResponse)
     async def job_action(request: Request, job_id: int) -> HTMLResponse:
@@ -278,7 +283,9 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
                 candidates = await inventory.discover_from_leases(ctx)
         except USER_ERRORS as exc:
             return render(request, "_message.html", error=log_user_error(request, exc))
-        return render(request, "_candidates.html", candidates=candidates)
+        # Nur neue Geräte anzeigen; Geräte aus dem Inventar stehen schon in der Geräteliste
+        new = [c for c in candidates if not c.known]
+        return render(request, "_candidates.html", candidates=new, hidden=len(candidates) - len(new))
 
     @app.post("/refresh", response_class=HTMLResponse)
     async def refresh(request: Request) -> HTMLResponse:

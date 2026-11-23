@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.4.2
+
+- Geräte im Netz suchen (OPNsense-Leases, mDNS) zeigt nur noch neue Geräte; Geräte aus dem Inventar werden
+  ausgeblendet.
+- Nach „Nur übernehmen“ verschwindet das Gerät aus der Liste der gefundenen Geräte und erscheint sofort in der
+  Geräteliste, ohne die Seite neu zu laden.
+
 ## 0.4.1
 
 - Der Quellcode ist jetzt öffentlich: https://github.com/macpo-homelab/device-manager. Fehler und Ideen gerne
