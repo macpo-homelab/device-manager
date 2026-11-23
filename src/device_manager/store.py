@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from dataclasses import asdict, dataclass, field
@@ -39,6 +40,10 @@ CREATE TABLE IF NOT EXISTS actions (
     action TEXT NOT NULL,
     status TEXT NOT NULL,           -- ok | error
     message TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,           -- Name des Settings-Felds (nur config.EDITABLE_FIELDS)
+    value TEXT NOT NULL             -- JSON; hat Vorrang vor .env bzw. HA-Optionen
 );
 """
 # F12 Gerätestatus: nachträglich ergänzte Spalten
@@ -182,3 +187,17 @@ class Store:
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()
         return [Action(**dict(r)) for r in rows]
+
+    # Einstellungen (Seite „Einstellungen“) ------------------------------------
+    def setting_overrides(self) -> dict[str, Any]:
+        with self._lock:
+            rows = self._conn.execute("SELECT key, value FROM settings").fetchall()
+        return {r["key"]: json.loads(r["value"]) for r in rows}
+
+    def replace_setting_overrides(self, values: dict[str, Any]) -> None:
+        """Ersetzt alle gespeicherten Einstellungen (leeres dict = alles auf .env/HA-Optionen zurück)."""
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM settings")
+            self._conn.executemany(
+                "INSERT INTO settings (key, value) VALUES (?, ?)", [(k, json.dumps(v)) for k, v in values.items()]
+            )

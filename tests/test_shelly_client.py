@@ -1,8 +1,10 @@
 """Unit-Tests für den Shelly-Client."""
 
+import httpx
 import pytest
 
 from device_manager.shelly.client import (
+    CHECK_FOR_UPDATE_TIMEOUT,
     ShellyAuthError,
     ShellyClient,
     ShellyError,
@@ -73,3 +75,18 @@ async def test_rpc_error_is_reported(network):
     shelly(network)
     with pytest.raises(ShellyError, match="No handler"):
         await client(network).rpc("Foo.Bar")
+
+
+async def test_check_for_update_waits_longer_than_other_calls(network):
+    """Am echten Gerät dauert CheckForUpdate kurz nach einem Neustart > 10 s (Abfrage beim Update-Server)."""
+    shelly(network, available={"stable": "2.0.1"})
+    timeouts: list[float] = []
+
+    def factory(**kwargs):
+        timeouts.append(kwargs["timeout"])
+        return httpx.AsyncClient(transport=network, **kwargs)
+
+    client = ShellyClient("192.168.10.50", http_factory=factory, timeout=10.0)
+    await client.rpc("Sys.GetStatus")
+    assert await client.check_for_update() == {"stable": "2.0.1"}
+    assert timeouts == [10.0, CHECK_FOR_UPDATE_TIMEOUT] and CHECK_FOR_UPDATE_TIMEOUT >= 30

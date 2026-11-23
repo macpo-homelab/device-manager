@@ -1,5 +1,5 @@
 name: Device Manager
-version: "0.4.2"
+version: "0.6.0"
 slug: device_manager
 description: Geräte im Heimnetz verwalten – Shelly-Geräte übernehmen, IP in OPNsense reservieren, Firmware und HTTPS-Zertifikate verwalten, Gen4-Zigbee-Geräte aktualisieren
 arch:
@@ -64,6 +64,13 @@ schema:
   shelly_date_format: str
   shelly_latitude: float(-90,90)?
   shelly_longitude: float(-180,180)?
+  shelly_eco_mode: bool?
+  shelly_disable_ap: bool?
+  shelly_disable_ble: bool?
+  shelly_led_off: bool?
+  provision_update: bool?
+  provision_defaults: bool?
+  provision_certificate: bool?
   firmware_reboot_wait: int(60,3600)
   firmware_poll_interval: int(2,60)?
   z2m_base_topic: str

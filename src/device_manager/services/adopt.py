@@ -9,7 +9,8 @@ from .common import device_from_info, noop_progress, step
 from .identity import check_target_ip, establish_auth, verify_identity
 
 
-async def adopt(ctx: Context, host: str, progress: Progress = noop_progress) -> Device:
+async def adopt(ctx: Context, host: str, progress: Progress = noop_progress, current_password: str = "") -> Device:
+    """Gerät übernehmen; `current_password` = vom Anwender eingegebenes bisheriges Passwort."""
     with step(f"Übernehmen {host}"):
         with step("Ziel-IP prüfen"):
             check_target_ip(ctx, host)  # nur private IPv4 im Gerätenetz – vor jeder Anfrage
@@ -24,7 +25,7 @@ async def adopt(ctx: Context, host: str, progress: Progress = noop_progress) -> 
         else:
             progress("Identität geprüft (Geräte-ID, MAC) – ohne OPNsense kein Abgleich mit der DHCP-Lease")
         with step("Passwort einrichten"):
-            auth_mode = await establish_auth(ctx, host, info, progress)
+            auth_mode = await establish_auth(ctx, host, info, progress, current_password)
 
         with step("Inventar speichern"):
             existing = ctx.store.get_device(info.mac_colon)

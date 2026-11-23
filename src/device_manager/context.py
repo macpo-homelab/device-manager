@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
-from .config import Settings
+from .config import EDITABLE_FIELDS, Settings, merge_settings
 from .opnsense.client import OPNsenseClient
 from .shelly.client import ShellyClient, derive_password
 from .store import Device, Store
 from .tls import verify_https
 from .z2m.bus import MqttBus
 from .z2m.client import Z2MError, Zigbee2Mqtt
+
+log = logging.getLogger(__name__)
 
 TlsVerifier = Callable[..., Awaitable[Any]]
 Sleeper = Callable[[float], Awaitable[None]]
@@ -30,6 +33,29 @@ class Context:
     mqtt_bus: MqttBus | None = None
     tls_verifier: TlsVerifier = verify_https
     sleep: Sleeper = field(default=asyncio.sleep)
+    # Einstellungen aus .env/HA-Optionen ohne die Werte der Seite „Einstellungen“
+    base_settings: Settings = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.base_settings = self.settings
+
+    def reload_settings(self) -> None:
+        """Gespeicherte Werte der Seite „Einstellungen“ über die Basis-Einstellungen legen."""
+        overrides = {k: v for k, v in self.store.setting_overrides().items() if k in EDITABLE_FIELDS}
+        try:
+            self.settings = merge_settings(self.base_settings, overrides)
+        except ValueError as exc:  # z. B. ungültig gewordener Wert – Basis verwenden, nicht abstürzen
+            log.warning("Gespeicherte Einstellungen ignoriert: %s", exc)
+            self.settings = self.base_settings
+
+    def save_settings(self, values: dict[str, Any]) -> Settings:
+        """Prüft und speichert Werte der Seite „Einstellungen“; nur Abweichungen von der Basis werden gespeichert."""
+        current = {k: v for k, v in self.store.setting_overrides().items() if k in EDITABLE_FIELDS}
+        merged = merge_settings(self.base_settings, current | values)  # ValidationError bei ungültigen Werten
+        new, base = merged.model_dump(mode="json"), self.base_settings.model_dump(mode="json")
+        self.store.replace_setting_overrides({k: new[k] for k in EDITABLE_FIELDS if new[k] != base[k]})
+        self.settings = merged
+        return merged
 
     def _factory(self, transport: httpx.AsyncBaseTransport | None) -> Callable[..., httpx.AsyncClient]:
         def make(**kwargs: Any) -> httpx.AsyncClient:

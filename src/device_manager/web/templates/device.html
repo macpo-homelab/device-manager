@@ -18,18 +18,30 @@
       <dt>Modell</dt><dd>{{ device.app or "" }} {{ device.model or "" }} (Gen{{ device.gen or "?" }})</dd>
       <dt>Firmware</dt><dd>{{ device.firmware or "unbekannt" }}</dd>
       <dt>MAC</dt><dd><code>{{ device.mac or "unbekannt" }}</code></dd>
+      {% if wifi and device.mac %}<div id="lease-info" hx-get="devices/{{ device.key }}/lease-info" hx-trigger="load" hx-swap="outerHTML"></div>{% endif %}
       <dt>IP</dt><dd class="mono">{{ device.ip or "–" }}</dd>
-      <dt>DNS-Name</dt><dd class="mono">{{ device.hostname or "–" }}{% if device.hostname and domain %}.{{ domain }}{% endif %}</dd>
+      <dt>DNS-Name</dt><dd class="mono">{% if device.hostname and wifi %}{% set fqdn = device.hostname ~ ("." ~ domain if domain else "") %}
+        <a href="{{ 'https' if device.cert_not_after else 'http' }}://{{ fqdn }}/" target="_blank" rel="noopener noreferrer"
+           title="Weboberfläche des Geräts öffnen">{{ fqdn }}</a>{% else %}{{ device.hostname or "–" }}{% endif %}</dd>
       <dt>Verbindung</dt><dd>{{ "Zigbee (" ~ device.z2m_name ~ ")" if not wifi else "WLAN" }}</dd>
       <dt>Zertifikat</dt><dd class="{{ 'warn-text' if cert.level == 'warn' else 'error-text' if cert.level == 'error' else '' }}">{{ cert.label }}</dd>
       <dt>Passwort</dt>
       <dd class="inline-action" id="pw">
         <span>{{ {"device": "gerätespezifisch", "shared": "gemeinsam (Altbestand)", "none": "keins"}.get(device.auth_mode, "unbekannt") }}</span>
         {% if device.auth_mode == "device" %}
-        <button class="link" hx-post="devices/{{ device.key }}/password" hx-target="#pw" hx-swap="innerHTML">Passwort anzeigen</button>
-        {% elif device.auth_mode == "shared" %}
-        <button class="link" hx-post="devices/{{ device.key }}/rotate-password" hx-target="#msg" hx-disabled-elt="this"
-                hx-confirm="Gerätespezifisches Passwort auf dem Gerät setzen?">Auf eigenes Passwort umstellen</button>
+        <button type="button" class="icon-button" data-toggle-password hx-post="devices/{{ device.key }}/password"
+                hx-target="#pw-shown" hx-swap="innerHTML" aria-label="Passwort anzeigen" title="Passwort anzeigen" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button type="button" class="icon-button" data-copy-password="devices/{{ device.key }}/password"
+                aria-label="Passwort kopieren" title="Passwort in die Zwischenablage kopieren">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+        </button>
+        <span id="pw-shown" class="pw-shown" aria-live="polite"></span>
+        {% endif %}
+        {% if wifi and device.ip and device.mac %}
+        <button class="link" hx-post="devices/{{ device.key }}/set-password" hx-target="#msg" hx-disabled-elt="this"
+                hx-confirm="Gerätespezifisches Passwort auf dem Gerät setzen? Passt das bisherige Passwort nicht, wird danach gefragt.">{{ "Auf eigenes Passwort umstellen" if device.auth_mode == "shared" else "Passwort setzen" }}</button>
         {% endif %}
       </dd>
       <dt>Abgefragt</dt><dd>{% if device.checked_at %}<time datetime="{{ device.checked_at }}" data-local>{{ device.checked_at }}</time>{% else %}noch nie{% endif %}</dd>
@@ -80,6 +92,16 @@
           installiert es auf dem Gerät. Das Gerät startet danach neu.</p>
         <button hx-post="devices/{{ device.key }}/certificate" hx-include="#dev-name" hx-target="#msg"
                 hx-disabled-elt="this">{{ "Zertifikat erneuern" if device.cert_not_after else "Zertifikat erstellen und installieren" }}</button>
+      </div>
+
+      <div class="task">
+        <h3>Standardwerte setzen</h3>
+        <p class="hint">Setzt Name (oben), Zeitzone {{ settings.shelly_timezone }}, {% if settings.shelly_latitude is not none %}Standort, {% endif %}NTP {{ settings.shelly_ntp_server }}, Datumsformat
+          {%- if settings.shelly_eco_mode %}, Eco-Modus{% endif %}, AP-Passwort{% if settings.shelly_disable_ap %} und AP aus{% endif %}
+          {%- if settings.shelly_disable_ble %}, Bluetooth aus{% endif %}{% if settings.shelly_led_off %}, LED aus{% endif %}.
+          Das Gerät startet bei Bedarf neu. <a href="settings">Werte ändern</a></p>
+        <button hx-post="devices/{{ device.key }}/defaults" hx-include="#dev-name" hx-target="#msg" hx-disabled-elt="this"
+                hx-confirm="Standardwerte auf dem Gerät setzen? Das Gerät startet bei Bedarf neu.">Standardwerte setzen</button>
       </div>
       {% endif %}
     </section>

@@ -12,7 +12,7 @@
   <li data-step="5" data-option="certificate">HTTPS-Zertifikat</li>
 </ol>
 
-<form hx-post="provision" hx-target="#msg" hx-disabled-elt="find button[type='submit']">
+<form id="provision-form" hx-post="provision" hx-target="#msg" hx-disabled-elt="find button[type='submit']">
   <div class="form-grid">
     <fieldset class="panel">
       <legend class="skip">Gerät</legend>
@@ -27,7 +27,7 @@
       <legend class="skip">Ablauf</legend>
       <h2>Was soll passieren?</h2>
       <div class="checks">
-        <label class="check"><input type="checkbox" name="update" value="true" checked data-step-toggle="3">
+        <label class="check"><input type="checkbox" name="update" value="true"{% if settings.provision_update %} checked{% endif %} data-step-toggle="3">
           <span>Firmware aktualisieren</span></label>
         <label class="field indent">Firmware-Kanal
           <select name="stage">
@@ -35,10 +35,13 @@
             <option value="beta" {% if default_stage == "beta" %}selected{% endif %}>beta</option>
           </select>
         </label>
-        <label class="check"><input type="checkbox" name="defaults" value="true" checked data-step-toggle="4">
+        <label class="check"><input type="checkbox" name="defaults" value="true"{% if settings.provision_defaults %} checked{% endif %} data-step-toggle="4">
           <span>Standardeinstellungen setzen
-            <small class="hint">Name, Zeitzone {{ tz }}, Standort, NTP {{ ntp }}, Datumsformat, Eco-Modus, AP und Bluetooth aus, LED aus</small></span></label>
-        <label class="check"><input type="checkbox" name="certificate" value="true" checked data-step-toggle="5">
+            <small class="hint">Name, Zeitzone {{ settings.shelly_timezone }}, {% if settings.shelly_latitude is not none %}Standort, {% endif %}NTP {{ settings.shelly_ntp_server }}, Datumsformat
+              {%- if settings.shelly_eco_mode %}, Eco-Modus{% endif %}{% if settings.shelly_disable_ap %}, AP aus{% endif %}
+              {%- if settings.shelly_disable_ble %}, Bluetooth aus{% endif %}{% if settings.shelly_led_off %}, LED aus{% endif %}
+              – <a href="settings">ändern</a></small></span></label>
+        <label class="check"><input type="checkbox" name="certificate" value="true"{% if settings.provision_certificate %} checked{% endif %} data-step-toggle="5">
           <span>HTTPS-Zertifikat installieren</span></label>
       </div>
     </fieldset>

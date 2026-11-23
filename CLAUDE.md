@@ -7,6 +7,10 @@ HTTPS-Zertifikate (OPNsense-CA → Shelly), Gen4-Zigbee-Geräte per Zigbee2MQTT 
 Läuft lokal (Entwicklung) und als Home-Assistant-App (Ingress).
 
 ## Stand (2026-11-23)
+- v0.6.0: Gerätedetails mit „Standardwerte setzen“, Passwort-Icons (Auge/Kopieren), DHCP-Client-ID aus der Kea-Lease.
+- v0.5.0: F13 Passwort setzen/nachfragen (`PasswordRequired`, Job-`Retry`), F14 Seite „Einstellungen“
+  (`EDITABLE_GROUPS`, Tabelle `settings`, `ctx.save_settings`/`reload_settings`), DNS-Link in den Gerätedetails.
+- v0.4.2: Gerätesuche zeigt nur neue Geräte, Listen nach Übernahme aktualisiert (HX-Trigger `device-adopted`).
 - v0.4.1: Öffentliches GitHub-Repo `macpo-homelab/device-manager` vorbereitet, SECURITY.md.
 - v0.4.0: Umbenennung in Device Manager (Paket `device_manager`, Slug `device_manager`, Präfix `DM_`).
 - v0.3.2: Veröffentlichung auf GitHub vorbereitet (URLs, Lizenzhinweise, FUNDING.yml, Koordinaten optional).
@@ -27,6 +31,11 @@ Läuft lokal (Entwicklung) und als Home-Assistant-App (Ingress).
   per Button im Job bitten (`jobs.request_user_action`). Shelly hat keine abfragbare Update-Statusinformation.
 - Neue Geräte (Assistent, nach Firmware): Standardeinstellungen F11 (`services/defaults.py`), AP-Passwort = Geräte-Passwort.
   NTP-Server (`DM_SHELLY_NTP_SERVER`) per Button „an alle Geräte verteilen“; übrige Standardwerte nur beim Einrichten.
+  Eco/AP aus/Bluetooth aus/LED aus einzeln abschaltbar (aus = am Gerät nicht ändern; AP-Passwort immer).
+- Einstellungen-Seite (F14): Werte in SQLite haben Vorrang vor .env/HA-Optionen, keine Secrets/Verbindungen.
+  `ctx.base_settings` = .env/Optionen, `ctx.settings` = mit Overrides. Neue änderbare Felder in `config.EDITABLE_GROUPS`.
+- Fremdes Passwort (F13): Job fragt nach dem aktuellen Passwort (`PasswordRequired` + `Retry` am Job) und stellt
+  auf das abgeleitete um; Eingabe nie speichern oder loggen. Die Umbenennung ändert die Ableitung nicht.
 - Name: wie Hostname, aber Großbuchstaben erlaubt (`validate_name`); Kea-Hostname und Gerätename = Name,
   DNS-/Zertifikats-Hostname = Name klein (`Device.name` / `Device.hostname`).
 - DHCP-Beschreibung = Produktname mit Generation („Shelly Plug M Gen 3“, `product_name`). Nach Reservierungsänderung Unbound neu laden.
@@ -57,6 +66,7 @@ python scripts/publish_addon.py ../ha-apps --commit   # App-Repo füllen (danach
   - `context.py`: Fabrik für Adapter. Tests setzen hier Transporte, Bus, TLS-Verifier und `sleep` ein.
   - `shelly/client.py` (RPC, Digest SHA-256), `opnsense/client.py` (Kea + Trust), `z2m/bus.py` (PahoBus/InMemoryBus), `z2m/client.py`
   - `services/identity.py`: Identitätsprüfung (IP/ID/MAC/Lease), Passwörter setzen, prüfen und umstellen
+    (`set_device_password`, `switch_to_device_password`)
   - `services/`: `inventory` F1 + F12 (`check_status`), `adopt` F2, `reservation` F3, `firmware` F4, `certificate` F5, `zigbee` F6, `provision` F7
   - `jobs.py`: Hintergrund-Jobs und Protokolleintrag (F10). `store.py`: SQLite. `tls.py`: Zertifikatsprüfungen.
   - `steps.py`: Schritt-Logging (`with step("…")`, ContextVar), `failed_step`, `describe_error` (F10a).

@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from device_manager.web.app import create_app
-from tests.conftest import shelly
+from tests.conftest import device_password, shelly
 from tests.simulators.shelly_sim import ShellySim
 from tests.simulators.z2m_sim import ZigbeeShelly
 
@@ -218,10 +218,50 @@ def test_device_page_password_inline_and_apply_label(client, ctx, network):
     sim = _adopted(client, ctx, network)
     page = client.get(f"/devices/{sim.mac_colon}").text
     row = page[page.index('id="pw"') : page.index("</dd>", page.index('id="pw"'))]
-    assert "gerätespezifisch" in row and "Passwort anzeigen" in row and 'hx-target="#pw"' in row
+    assert "gerätespezifisch" in row and 'aria-label="Passwort anzeigen"' in row and 'hx-target="#pw-shown"' in row
+    assert f'data-copy-password="devices/{sim.mac_colon}/password"' in row and "data-toggle-password" in row
+    assert device_password(sim.mac) not in page  # erst auf Klick
     assert "Sofort anwenden</label>" in page and "(Neustart)" not in page
     shown = client.post(f"/devices/{sim.mac_colon}/password").text
-    assert '<code class="secret"' in shown and "<p" not in shown and "data-copy" in shown  # passt in die Zeile
+    assert '<code class="secret"' in shown and "<p" not in shown  # passt in die Zeile
+    assert device_password(sim.mac) in shown
+
+
+def test_device_page_shows_dhcp_client_id(client, ctx, network, opnsense):
+    sim = _adopted(client, ctx, network)
+    opnsense.add_lease(sim.ip, sim.mac_colon, "shellyplus1")
+    page = client.get(f"/devices/{sim.mac_colon}").text
+    assert f'hx-get="devices/{sim.mac_colon}/lease-info"' in page
+    fragment = client.get(f"/devices/{sim.mac_colon}/lease-info").text
+    assert "<dt>Client-ID</dt>" in fragment and f"01:{sim.mac_colon}" in fragment
+
+
+def test_client_id_row_hidden_without_opnsense(client, ctx, network):
+    sim = _adopted(client, ctx, network)
+    ctx.settings = ctx.settings.model_copy(update={"opnsense_url": ""})
+    fragment = client.get(f"/devices/{sim.mac_colon}/lease-info").text
+    assert "Client-ID" not in fragment and "hidden" in fragment
+
+
+def test_apply_defaults_from_device_page(client, ctx, network):
+    sim = _adopted(client, ctx, network)
+    page = client.get(f"/devices/{sim.mac_colon}").text
+    assert "<h3>Standardwerte setzen</h3>" in page and f'hx-post="devices/{sim.mac_colon}/defaults"' in page
+    assert page.index("<h3>HTTPS-Zertifikat</h3>") < page.index("<h3>Standardwerte setzen</h3>")
+    job = wait_job(client, client.post(f"/devices/{sim.mac_colon}/defaults", data={"name": "Flur"}).text)
+    assert job["status"] == "ok", job["error"]
+    assert sim.config["Sys"]["device"] == {"name": "Flur", "eco_mode": True}
+    assert sim.config["WiFi"]["ap"] == {"enable": False, "pass": device_password(sim.mac)}
+    assert ctx.store.get_device(sim.mac_colon).name == "Flur"
+
+
+def test_apply_defaults_refuses_other_device_at_ip(client, ctx, network):
+    sim = _adopted(client, ctx, network)
+    network.devices.remove(sim)
+    other = shelly(network, mac="A8032AB99999")
+    job = wait_job(client, client.post(f"/devices/{sim.mac_colon}/defaults", data={"name": "Flur"}).text)
+    assert job["status"] == "error" and "anderes Gerät" in job["error"]
+    assert "WiFi" not in other.config
 
 
 def test_firmware_info_shows_installed_and_available(client, ctx, network):

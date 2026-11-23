@@ -90,6 +90,17 @@ async def refresh_all(ctx: Context) -> dict[str, str]:
     return errors
 
 
+async def dhcp_client_id(ctx: Context, device: Device) -> str | None:
+    """DHCP-Client-ID (Option 61) aus der Kea-Lease des Geräts (Suche über die MAC). None = keine bekannt."""
+    if not device.mac or not ctx.settings.opnsense_url:
+        return None
+    with step(f"DHCP-Client-ID {device.key}"):
+        for lease in await ctx.opnsense().kea_leases():
+            if lease_mac(lease) == device.mac and lease.get("client_id"):
+                return str(lease["client_id"])
+    return None
+
+
 async def discover_from_leases(ctx: Context) -> list[Candidate]:
     """Kea-Leases nach Shelly-Geräten durchsuchen und per /shelly bestätigen."""
     leases = await ctx.opnsense().kea_leases()

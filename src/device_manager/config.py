@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -53,6 +54,15 @@ class Settings(BaseSettings):
     # Standort für Sonnenauf-/-untergang; leer = nicht setzen (das Gerät behält seinen Standort)
     shelly_latitude: float | None = Field(None, ge=-90, le=90)
     shelly_longitude: float | None = Field(None, ge=-180, le=180)
+    # Einzelne Standardeinstellungen ein/aus (aus = am Gerät nicht ändern)
+    shelly_eco_mode: bool = True
+    shelly_disable_ap: bool = True  # das AP-Passwort (= Geräte-Passwort) wird immer gesetzt
+    shelly_disable_ble: bool = True
+    shelly_led_off: bool = True
+    # Vorbelegung im Assistenten „Neues Gerät“
+    provision_update: bool = True
+    provision_defaults: bool = True
+    provision_certificate: bool = True
 
     # WLAN (Gen4 über Zigbee)
     wifi_ssid: str = ""
@@ -153,6 +163,74 @@ class Settings(BaseSettings):
             self.mqtt_password,
         ]
         return [v.get_secret_value() for v in values if v.get_secret_value()]
+
+
+@dataclass(frozen=True)
+class EditableField:
+    name: str
+    label: str
+    hint: str = ""
+
+
+# Auf der Seite „Einstellungen“ änderbar (gespeichert in der Datenbank, Vorrang vor .env/HA-Optionen).
+# Keine Secrets, keine Verbindungs- und Sicherheitseinstellungen.
+EDITABLE_GROUPS: tuple[tuple[str, tuple[EditableField, ...]], ...] = (
+    (
+        "Standardeinstellungen für Geräte",
+        (
+            EditableField("shelly_ntp_server", "NTP-Server", "host oder host:port"),
+            EditableField("shelly_timezone", "Zeitzone", "z. B. Europe/Berlin"),
+            EditableField("shelly_date_format", "Datumsformat der Geräte-Weboberfläche", "z. B. YYYY-MM-DD"),
+            EditableField("shelly_latitude", "Breitengrad", "leer = Standort am Gerät nicht ändern"),
+            EditableField("shelly_longitude", "Längengrad", "leer = Standort am Gerät nicht ändern"),
+            EditableField("shelly_eco_mode", "Eco-Modus einschalten"),
+            EditableField("shelly_disable_ap", "Access Point ausschalten", "das AP-Passwort wird immer gesetzt"),
+            EditableField("shelly_disable_ble", "Bluetooth ausschalten"),
+            EditableField("shelly_led_off", "LED-Anzeige ausschalten", "nur Geräte mit LED-Ring, z. B. Plug M Gen3"),
+        ),
+    ),
+    (
+        "Assistent „Neues Gerät“",
+        (
+            EditableField("provision_update", "Firmware aktualisieren"),
+            EditableField("default_firmware_stage", "Firmware-Kanal", "gilt auch für Status und Geräteseite"),
+            EditableField("provision_defaults", "Standardeinstellungen setzen"),
+            EditableField("provision_certificate", "HTTPS-Zertifikat installieren"),
+        ),
+    ),
+    (
+        "Netz und Zertifikat",
+        (
+            EditableField("dns_domain", "DNS-Domain", "z. B. home.arpa"),
+            EditableField("ip_range_start", "IP-Bereich von"),
+            EditableField("ip_range_end", "IP-Bereich bis"),
+            EditableField("opnsense_reload_unbound", "Unbound nach Reservierung neu laden"),
+            EditableField("cert_ca_name", "CA in OPNsense (Name)"),
+            EditableField("cert_lifetime_days", "Zertifikats-Laufzeit (Tage)"),
+        ),
+    ),
+    (
+        "Zeitlimits (Sekunden)",
+        (
+            EditableField("shelly_timeout", "Timeout je Geräteanfrage"),
+            EditableField("poll_interval", "Abfrageintervall beim Warten auf Neustarts"),
+            EditableField("reboot_timeout", "Wartezeit auf einen Neustart"),
+            EditableField("firmware_poll_interval", "Abfrageintervall beim Firmware-Update"),
+            EditableField("firmware_reboot_wait", "Firmware: Neustart-Aufforderung nach"),
+            EditableField("firmware_timeout", "Firmware: Wartezeit danach"),
+            EditableField("zigbee_wifi_timeout", "Zigbee: Wartezeit auf das WLAN"),
+        ),
+    ),
+)
+EDITABLE_FIELDS = {f.name: f for _, group in EDITABLE_GROUPS for f in group}
+
+
+def merge_settings(base: Settings, overrides: dict[str, Any]) -> Settings:
+    """Werte aus der Datenbank über die Einstellungen legen (geprüft wie beim Laden, ohne .env erneut zu lesen)."""
+    unknown = set(overrides) - set(EDITABLE_FIELDS)
+    if unknown:
+        raise ValueError(f"Nicht änderbare Einstellungen: {', '.join(sorted(unknown))}")
+    return Settings.model_validate({**base.model_dump(), **overrides})
 
 
 def load_settings(options_file: Path | None = None, **overrides: Any) -> Settings:

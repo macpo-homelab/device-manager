@@ -20,6 +20,9 @@ log = logging.getLogger(__name__)
 AUTH_USER = "admin"
 CERT_CHUNK_SIZE = 1024
 MIN_HTTPS_FIRMWARE = (2, 0, 0)
+# Shelly.CheckForUpdate fragt den Update-Server von Shelly ab. Kurz nach einem Neustart (DNS, Uhrzeit, TLS zum
+# Server) und wenn das Gerät gleichzeitig andere Anfragen bearbeitet, dauert das am echten Gerät > 10 s.
+CHECK_FOR_UPDATE_TIMEOUT = 30.0
 
 HttpFactory = Callable[..., httpx.AsyncClient]
 
@@ -159,19 +162,27 @@ class ShellyClient:
         return None
 
     async def _request(
-        self, method: str, path: str, *, json: Any = None, use_auth: bool = True, what: str | None = None
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        use_auth: bool = True,
+        what: str | None = None,
+        timeout: float | None = None,
     ) -> Any:
         # Nur Methode/Pfad loggen – Request-Bodies können Passwort-Hashes oder private Schlüssel enthalten.
         what = what or f"{method} {path}"
         url = f"{self.base_url}{path}"
         started = time.monotonic()
+        timeout = timeout or self._timeout
         log.debug("Shelly %s: %s → %s", self.host, what, url)
         try:
-            async with self._http_factory(timeout=self._timeout) as http:
+            async with self._http_factory(timeout=timeout) as http:
                 response = await http.request(method, url, json=json, auth=self._auth(use_auth))
         except httpx.TimeoutException as exc:
             raise ShellyUnreachable(
-                f"{self.host} nicht erreichbar: keine Antwort innerhalb von {self._timeout:.0f}s bei {what} "
+                f"{self.host} nicht erreichbar: keine Antwort innerhalb von {timeout:.0f}s bei {what} "
                 f"({type(exc).__name__})"
             ) from exc
         except (httpx.TransportError, OSError) as exc:
@@ -195,11 +206,18 @@ class ShellyClient:
                 f"{self.host}: ungültige Antwort bei {what} (HTTP {response.status_code}, kein JSON): {snippet!r}"
             ) from exc
 
-    async def rpc(self, method: str, params: dict[str, Any] | None = None, *, use_auth: bool = True) -> Any:
+    async def rpc(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        use_auth: bool = True,
+        timeout: float | None = None,
+    ) -> Any:
         body: dict[str, Any] = {"id": next(self._ids), "method": method}
         if params is not None:
             body["params"] = params
-        data = await self._request("POST", "/rpc", json=body, use_auth=use_auth, what=f"RPC {method}")
+        data = await self._request("POST", "/rpc", json=body, use_auth=use_auth, what=f"RPC {method}", timeout=timeout)
         if "error" in data:
             err = data["error"]
             if err.get("code") == 401:
@@ -239,7 +257,8 @@ class ShellyClient:
         self._password = password
 
     async def check_for_update(self) -> dict[str, str]:
-        result = await self.rpc("Shelly.CheckForUpdate") or {}
+        timeout = max(self._timeout, CHECK_FOR_UPDATE_TIMEOUT)
+        result = await self.rpc("Shelly.CheckForUpdate", timeout=timeout) or {}
         return {stage: info["version"] for stage, info in result.items() if info and "version" in info}
 
     async def set_config(self, component: str, config: dict[str, Any]) -> bool:

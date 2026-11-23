@@ -48,12 +48,14 @@ class OPNsenseSim:
         return ca
 
     def add_lease(self, ip: str, mac: str, hostname: str = "") -> None:
-        self.leases.append({"address": ip, "hwaddr": mac, "hostname": hostname, "state": "0"})
+        self.leases.append(
+            {"address": ip, "hwaddr": mac, "client_id": "01:" + mac.lower(), "hostname": hostname, "state": "0"}
+        )
 
     def all_leases(self) -> list[dict[str, Any]]:
         static = {lease["address"] for lease in self.leases}
         dynamic = [
-            {"address": ip, "hwaddr": mac, "hostname": host, "state": "0"}
+            {"address": ip, "hwaddr": mac, "client_id": "01:" + mac.lower(), "hostname": host, "state": "0"}
             for ip, mac, host in self.lease_source()
             if ip not in static
         ]

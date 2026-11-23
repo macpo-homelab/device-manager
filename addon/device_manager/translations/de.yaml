@@ -75,3 +75,21 @@ configuration:
   shelly_date_format:
     name: Datumsformat der Geräte-Weboberfläche
     description: "z. B. YYYY-MM-DD"
+  shelly_eco_mode:
+    name: "Standard: Eco-Modus einschalten"
+    description: "Aus = am Gerät nicht ändern. Auch in der App unter „Einstellungen“ änderbar."
+  shelly_disable_ap:
+    name: "Standard: Access Point ausschalten"
+    description: "Das AP-Passwort (= Geräte-Passwort) wird immer gesetzt."
+  shelly_disable_ble:
+    name: "Standard: Bluetooth ausschalten"
+    description: "Aus = am Gerät nicht ändern."
+  shelly_led_off:
+    name: "Standard: LED-Anzeige ausschalten"
+    description: "Nur Geräte mit LED-Ring, z. B. Plug M Gen3."
+  provision_update:
+    name: "Assistent: Firmware aktualisieren vorausgewählt"
+  provision_defaults:
+    name: "Assistent: Standardeinstellungen vorausgewählt"
+  provision_certificate:
+    name: "Assistent: HTTPS-Zertifikat vorausgewählt"

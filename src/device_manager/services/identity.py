@@ -17,7 +17,7 @@ from ..context import Context
 from ..jobs import Progress
 from ..shelly.client import DeviceInfo, ShellyAuthError, ShellyError, derive_password, id_matches_mac
 from ..store import Device
-from .common import ServiceError, lease_mac, noop_progress, step
+from .common import PasswordRequired, ServiceError, lease_mac, noop_progress, step
 
 log = logging.getLogger(__name__)
 
@@ -75,8 +75,15 @@ async def verify_inventory_device(ctx: Context, host: str, device: Device) -> De
     return info
 
 
-async def establish_auth(ctx: Context, host: str, info: DeviceInfo, progress: Progress = noop_progress) -> str:
-    """Setzt das gerätespezifische Passwort bzw. prüft vorhandene Zugangsdaten. Liefert den auth_mode."""
+async def establish_auth(
+    ctx: Context, host: str, info: DeviceInfo, progress: Progress = noop_progress, current_password: str = ""
+) -> str:
+    """Setzt das gerätespezifische Passwort bzw. prüft vorhandene Zugangsdaten. Liefert den auth_mode.
+
+    Lehnt das Gerät abgeleitetes und Master-Passwort ab, wird mit `current_password` (vom Anwender
+    eingegeben) auf das gerätespezifische Passwort umgestellt; ohne Eingabe -> PasswordRequired.
+    Die Identität (`verify_identity`) muss vorher geprüft sein.
+    """
     master = ctx.settings.shelly_password.get_secret_value()
     if not master:
         if info.auth_en:
@@ -90,14 +97,85 @@ async def establish_auth(ctx: Context, host: str, info: DeviceInfo, progress: Pr
         progress("Gerätespezifisches Passwort gesetzt")
         return "device"
     for mode, password in (("device", derived), ("shared", master)):
+        if await _accepts(ctx, host, info.id, password, mode):
+            progress(
+                "Passwort geprüft" + (" (gemeinsames Passwort – Umstellung empfohlen)" if mode == "shared" else "")
+            )
+            return mode
+    if not current_password:
+        raise PasswordRequired(
+            f"{host} ist mit einem anderen Passwort geschützt – bitte das aktuelle Passwort des Geräts eingeben"
+        )
+    await switch_to_device_password(ctx, host, info.id, info.mac, current_password, progress)
+    return "device"
+
+
+async def _accepts(ctx: Context, host: str, device_id: str, password: str, label: str) -> bool:
+    try:
+        await ctx.shelly_with(host, password, device_id).check_auth()
+    except ShellyAuthError as exc:
+        log.debug("%s: Passwort-Variante '%s' abgelehnt (%s)", host, label, exc)
+        return False
+    return True
+
+
+async def switch_to_device_password(
+    ctx: Context, host: str, device_id: str, mac: str, current: str, progress: Progress = noop_progress
+) -> None:
+    """Mit dem bisherigen Passwort anmelden, das gerätespezifische setzen und prüfen (Identität vorher prüfen)."""
+    derived = derive_password(ctx.settings.shelly_password.get_secret_value(), mac)
+    with step("Bisheriges Passwort prüfen"):
+        if not await _accepts(ctx, host, device_id, current, "Eingabe"):
+            raise PasswordRequired(f"{host}: eingegebenes Passwort wird vom Gerät abgelehnt – bitte erneut eingeben")
+    with step("Gerätespezifisches Passwort setzen"):
         try:
-            await ctx.shelly_with(host, password, info.id).check_auth()
-        except ShellyAuthError as exc:
-            log.debug("%s: Passwort-Variante '%s' abgelehnt (%s)", host, mode, exc)
-            continue
-        progress("Passwort geprüft" + (" (gemeinsames Passwort – Umstellung empfohlen)" if mode == "shared" else ""))
-        return mode
-    raise ServiceError(f"{host} ist mit einem anderen Passwort geschützt – bitte am Gerät zurücksetzen oder angleichen")
+            await ctx.shelly_with(host, current, device_id).set_auth(derived, device_id)
+        except ShellyError as exc:
+            # Antwort evtl. verloren, obwohl das Gerät das Passwort übernommen hat -> unten prüfen
+            progress(f"Hinweis: SetAuth ohne Bestätigung ({exc}) – prüfe neues Passwort")
+    with step("Neues Passwort prüfen"):
+        if not await _accepts(ctx, host, device_id, derived, "device"):
+            raise ServiceError(f"{host}: Umstellung fehlgeschlagen – Gerät verwendet weiterhin das bisherige Passwort")
+    progress("Gerätespezifisches Passwort gesetzt und geprüft")
+
+
+async def set_device_password(
+    ctx: Context, device: Device, current_password: str = "", progress: Progress = noop_progress
+) -> Device:
+    """Inventar-Gerät auf sein gerätespezifisches Passwort stellen.
+
+    Ohne Eingabe wird das Master-Passwort als bisheriges probiert; lehnt das Gerät es ab, fragt der Job nach
+    dem aktuellen Passwort (PasswordRequired).
+    """
+    with step(f"Passwort setzen {device.key}"):
+        if device.connection == "zigbee" or not device.ip:
+            raise ServiceError(f"{device.key}: Passwort nur für WLAN-Geräte mit bekannter IP setzbar")
+        master = ctx.settings.shelly_password.get_secret_value()
+        if not master:
+            raise ServiceError("Kein Master-Passwort konfiguriert (DM_SHELLY_PASSWORD)")
+        host = device.ip
+        with step("Gerät prüfen"):
+            check_target_ip(ctx, host)
+            info = await verify_inventory_device(ctx, host, device)
+        assert device.mac and device.device_id
+        derived = derive_password(master, device.mac)
+        if not info.auth_en:
+            with step("Gerätespezifisches Passwort setzen"):
+                await ctx.shelly_with(host, "", device.device_id).set_auth(derived, device.device_id)
+            progress("Gerät hatte kein Passwort – gerätespezifisches Passwort gesetzt")
+        elif await _accepts(ctx, host, device.device_id, derived, "device"):
+            progress("Gerät verwendet bereits sein gerätespezifisches Passwort")
+        else:
+            current = current_password or master
+            if not await _accepts(ctx, host, device.device_id, current, "bisher"):
+                raise PasswordRequired(
+                    f"{host}: Gerät lehnt "
+                    + ("das eingegebene Passwort" if current_password else "gerätespezifisches und Master-Passwort")
+                    + " ab – bitte das aktuelle Passwort des Geräts eingeben"
+                )
+            await switch_to_device_password(ctx, host, device.device_id, device.mac, current, progress)
+        device.auth_mode = "device"
+        return ctx.store.upsert_device(device)
 
 
 async def rotate_to_device_password(ctx: Context, device: Device, progress: Progress = noop_progress) -> Device:

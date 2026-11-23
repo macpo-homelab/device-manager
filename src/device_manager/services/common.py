@@ -19,6 +19,12 @@ class ServiceError(Exception):
     """Fachlicher Fehler, der dem Nutzer angezeigt wird."""
 
 
+class PasswordRequired(ServiceError):
+    """Das Gerät lehnt die bekannten Passwörter ab – der Job fragt den Anwender nach dem aktuellen Passwort."""
+
+    asks_password = True  # wertet jobs.JobManager aus (ohne Import der Services)
+
+
 def lease_mac(lease: dict[str, object]) -> str | None:
     """MAC einer Kea-Lease normalisiert ('aa:bb:..') oder None bei ungültigem Wert."""
     try:

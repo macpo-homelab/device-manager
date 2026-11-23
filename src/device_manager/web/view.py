@@ -1,10 +1,12 @@
-"""Aufbereitung für die Oberfläche: Gerätezustand (F12), Zertifikatsstatus, Protokolleinträge."""
+"""Aufbereitung für die Oberfläche: Gerätezustand (F12), Zertifikatsstatus, Protokolleinträge, Einstellungen."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal, get_args, get_origin
 
+from ..config import EDITABLE_GROUPS, Settings
 from ..store import Action, Device
 
 CERT_WARN_DAYS = 30
@@ -112,3 +114,39 @@ def log_entries(actions: list[Action], devices: list[Device]) -> list[LogEntry]:
         name = names.get(key, key)
         entries.append(LogEntry(a.ts, a.device_key, name, a.action, a.status == "ok", short, detail, key in names))
     return entries
+
+
+@dataclass(frozen=True)
+class SettingRow:
+    name: str
+    label: str
+    hint: str
+    kind: str  # bool | choice | number | text
+    value: object
+    env_value: object  # Wert aus .env bzw. HA-Optionen
+    overridden: bool
+    choices: tuple[str, ...] = ()
+
+
+def setting_groups(settings: Settings, base: Settings, overridden: set[str]) -> list[tuple[str, list[SettingRow]]]:
+    """Felder der Seite „Einstellungen“ mit Typ, aktuellem Wert und Wert aus .env/HA-Optionen."""
+    current, env = settings.model_dump(mode="json"), base.model_dump(mode="json")
+    groups = []
+    for title, fields in EDITABLE_GROUPS:
+        rows = []
+        for f in fields:
+            annotation = Settings.model_fields[f.name].annotation
+            choices: tuple[str, ...] = ()
+            if annotation is bool:
+                kind = "bool"
+            elif get_origin(annotation) is Literal:
+                kind, choices = "choice", tuple(str(a) for a in get_args(annotation))
+            elif annotation in (int, float) or set(get_args(annotation)) & {int, float}:
+                kind = "number"
+            else:
+                kind = "text"
+            rows.append(
+                SettingRow(f.name, f.label, f.hint, kind, current[f.name], env[f.name], f.name in overridden, choices)
+            )
+        groups.append((title, rows))
+    return groups

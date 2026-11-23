@@ -33,6 +33,15 @@ class UserAction:
     run: Callable[[], Awaitable[str]]  # liefert die Meldung für das Job-Protokoll
 
 
+@dataclass(frozen=True)
+class Retry:
+    """Wohin die Passwort-Nachfrage eines Jobs gesendet wird: gleicher Endpunkt, gleiche Eingaben plus Passwort."""
+
+    url: str
+    vals: dict[str, str] = field(default_factory=dict)
+    include: str = ""  # CSS-Selektor eines Formulars, dessen Felder mitgesendet werden (hx-include)
+
+
 _current_job: ContextVar[Job | None] = ContextVar("sm_current_job", default=None)
 
 
@@ -65,6 +74,8 @@ class Job:
     error_detail: str | None = None  # Fehlertyp und Ursachenkette
     action: UserAction | None = None  # offene Aufforderung an den Anwender
     started: datetime = field(default_factory=lambda: datetime.now(UTC))
+    retry: Retry | None = None  # erneuter Start mit Passwort-Eingabe (siehe password_prompt)
+    password_prompt: bool = False  # Gerät lehnt die bekannten Passwörter ab -> Eingabefeld anzeigen
 
     @property
     def done(self) -> bool:
@@ -88,8 +99,8 @@ class JobManager:
         self.jobs: dict[int, Job] = {}
         self._tasks: dict[int, asyncio.Task[None]] = {}
 
-    def start(self, title: str, device_key: str | None, fn: JobFn) -> Job:
-        job = Job(next(self._ids), title, device_key)
+    def start(self, title: str, device_key: str | None, fn: JobFn, retry: Retry | None = None) -> Job:
+        job = Job(next(self._ids), title, device_key, retry=retry)
         self.jobs[job.id] = job
         self._tasks[job.id] = asyncio.create_task(self._run(job, fn))
         return job
@@ -118,6 +129,7 @@ class JobManager:
             job.step = where
             job.error = str(exc) or type(exc).__name__
             job.error_detail = steps.describe_error(exc)
+            job.password_prompt = job.retry is not None and getattr(exc, "asks_password", False)
             log.error(
                 "[%s] FEHLER nach %.1fs%s: %s",
                 ref,

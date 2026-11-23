@@ -7,6 +7,8 @@ Gesetzt werden (Shelly-API, siehe CLAUDE.md „Externe APIs“):
 - BLE.SetConfig: ab FW 2.0.0 nur rpc.enable = false (Bluetooth-Scan aktiviert die Firmware bei Bedarf selbst),
   davor enable = false
 - PLUGS_UI.SetConfig: leds.mode = "off" (dokumentiert für Plug M Gen3; andere Geräte: Hinweis)
+Eco-Modus, AP aus, Bluetooth und LED lassen sich in den Einstellungen einzeln abschalten (shelly_eco_mode,
+shelly_disable_ap, shelly_disable_ble, shelly_led_off); abgeschaltet = am Gerät nicht ändern.
 Meldet eine Änderung restart_required, wird das Gerät neu gestartet (keine Firmware im Spiel).
 """
 
@@ -63,7 +65,7 @@ async def apply_defaults(
             restart |= await client.set_config(
                 "Sys",
                 {
-                    "device": {"name": name, "eco_mode": True},
+                    "device": {"name": name, "eco_mode": True} if s.shelly_eco_mode else {"name": name},
                     "location": location,
                     "sntp": {"server": s.shelly_ntp_server},
                     "ui_data": ui_data,
@@ -73,26 +75,38 @@ async def apply_defaults(
         result.applied.append(
             f"Name {name}, Zeitzone {s.shelly_timezone}, Standort {place}, "
             f"Datumsformat {s.shelly_date_format}, "
-            f"NTP {s.shelly_ntp_server}, Eco-Modus an"
+            f"NTP {s.shelly_ntp_server}" + (", Eco-Modus an" if s.shelly_eco_mode else "")
         )
+        if not s.shelly_eco_mode:
+            result.skipped.append("Eco-Modus: laut Einstellungen nicht ändern")
 
-        with step("Access Point absichern und deaktivieren"):
+        with step("Access Point absichern" + (" und deaktivieren" if s.shelly_disable_ap else "")):
             password = ctx.device_password(device) if device.auth_mode == "device" else ""
-            ap: dict[str, object] = {"enable": False}
+            ap: dict[str, object] = {"enable": False} if s.shelly_disable_ap else {}
             if password:
                 ap["pass"] = password
-            restart |= await client.set_config("WiFi", {"ap": ap})
-        result.applied.append("Access Point deaktiviert" + (" (mit Geräte-Passwort)" if password else ""))
+            if ap:
+                restart |= await client.set_config("WiFi", {"ap": ap})
+        if s.shelly_disable_ap:
+            result.applied.append("Access Point deaktiviert" + (" (mit Geräte-Passwort)" if password else ""))
+        elif password:
+            result.applied.append("Access Point mit Geräte-Passwort abgesichert")
         if not password:
             result.skipped.append("AP-Passwort: kein gerätespezifisches Passwort vorhanden")
+        if not s.shelly_disable_ap:
+            result.skipped.append("Access Point: laut Einstellungen nicht ausschalten")
 
         info = await client.get_device_info()
         legacy_ble = parse_version(info.ver) < BLE_ENABLE_REMOVED
-        with step("Bluetooth deaktivieren"):
-            ble: dict[str, object] = {"rpc": {"enable": False}}
-            if legacy_ble:
-                ble["enable"] = False
-            ble_restart = await _optional(client, "BLE", ble, "Bluetooth", result)
+        ble_restart: bool | None = None
+        if s.shelly_disable_ble:
+            with step("Bluetooth deaktivieren"):
+                ble: dict[str, object] = {"rpc": {"enable": False}}
+                if legacy_ble:
+                    ble["enable"] = False
+                ble_restart = await _optional(client, "BLE", ble, "Bluetooth", result)
+        else:
+            result.skipped.append("Bluetooth: laut Einstellungen nicht ändern")
         if ble_restart is not None:
             restart |= ble_restart
             result.applied.append(
@@ -101,8 +115,12 @@ async def apply_defaults(
                 else "Bluetooth-RPC deaktiviert (Scan steuert die Firmware selbst)"
             )
 
-        with step("LED-Anzeige ausschalten"):
-            led_restart = await _optional(client, "PLUGS_UI", {"leds": {"mode": "off"}}, "LED-Anzeige", result)
+        led_restart: bool | None = None
+        if s.shelly_led_off:
+            with step("LED-Anzeige ausschalten"):
+                led_restart = await _optional(client, "PLUGS_UI", {"leds": {"mode": "off"}}, "LED-Anzeige", result)
+        else:
+            result.skipped.append("LED-Anzeige: laut Einstellungen nicht ändern")
         if led_restart is not None:
             restart |= led_restart
             result.applied.append("LED-Anzeige aus")

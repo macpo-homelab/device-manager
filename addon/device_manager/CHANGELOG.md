@@ -1,5 +1,36 @@
 # Änderungen
 
+## 0.6.0
+
+- Gerätedetails: neuer Abschnitt „Standardwerte setzen“ unter dem HTTPS-Zertifikat. Er setzt die Werte aus den
+  Einstellungen (NTP, Zeitzone, Eco-Modus, AP, Bluetooth, LED …) auch auf bereits eingerichteten Geräten.
+- Passwort im Steckbrief: Auge-Symbol zum Ein- und Ausblenden, Kopieren-Symbol legt das Passwort direkt in die
+  Zwischenablage.
+- Steckbrief zeigt die DHCP-Client-ID aus der Kea-Lease in OPNsense, falls vorhanden.
+
+## 0.5.2
+
+- Die Abfrage verfügbarer Firmware-Versionen wartet bis zu 30 s auf das Gerät. Kurz nach einem Neustart (z. B.
+  nach dem Installieren des Zertifikats) brauchte das Gerät dafür länger als 10 s, die Abfrage schlug dann fehl.
+
+## 0.5.1
+
+- Einstellungen: kürzere Beschriftungen im Bereich „Assistent „Neues Gerät““ und bei „Unbound nach Reservierung
+  neu laden“.
+
+## 0.5.0
+
+- **Neue Seite „Einstellungen“:** NTP-Server, Zeitzone, Standort, Datumsformat und welche Standardeinstellungen
+  gesetzt werden (Eco-Modus, AP aus, Bluetooth aus, LED aus), die Vorauswahl im Assistenten, DNS-Domain,
+  IP-Bereich, CA und Zeitlimits lassen sich direkt in der App ändern. Die Werte haben Vorrang vor den Optionen
+  der App und lassen sich einzeln zurücksetzen.
+- **Passwort setzen:** In den Gerätedetails stellt „Passwort setzen“ ein Gerät auf sein gerätespezifisches
+  Passwort um. Passt das bisherige Passwort nicht, fragt die App danach.
+- Lehnt ein Gerät beim Übernehmen oder Einrichten die bekannten Passwörter ab, fragt die App nach dem aktuellen
+  Passwort und fährt damit fort, statt abzubrechen. Das eingegebene Passwort wird nicht gespeichert.
+- Der DNS-Name in den Gerätedetails ist ein Link auf die Weboberfläche des Geräts (HTTPS, sobald ein Zertifikat
+  installiert ist).
+
 ## 0.4.2
 
 - Geräte im Netz suchen (OPNsense-Leases, mDNS) zeigt nur noch neue Geräte; Geräte aus dem Inventar werden

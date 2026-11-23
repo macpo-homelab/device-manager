@@ -7,6 +7,11 @@ Verwaltet Shelly-Geräte (Gen2, Gen3, Gen4) im Heimnetz:
 - Firmware aktualisieren (Kanal stable oder beta).
 - HTTPS-Zertifikat von der internen CA in OPNsense ausstellen und auf dem Shelly installieren (Firmware ≥ 2.0.0, Voraussetzung: Kea-Reservierung des Geräts, der Hostname muss zur Reservierung passen).
 - Gen4-Geräte im Zigbee-Modus: WLAN über Zigbee2MQTT einschalten, Firmware aktualisieren, WLAN wieder ausschalten.
+- Passwort eines Geräts auf das gerätespezifische umstellen. Lehnt ein Gerät die bekannten Passwörter ab, fragt die App nach dem aktuellen.
+
+Standardwerte für neue Geräte (z. B. NTP-Server), die Vorauswahl im Assistenten, DNS-Domain, IP-Bereich, CA und
+Zeitlimits lassen sich auch in der App unter „Einstellungen“ ändern. Dort gespeicherte Werte haben Vorrang vor
+den Optionen der App.
 
 ## Installation
 

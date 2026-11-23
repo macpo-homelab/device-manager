@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen – Device Manager{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Einstellungen</h1></div>
+<p class="hint">Hier gespeicherte Werte haben Vorrang vor {{ "den Optionen der App" if ha else "der .env" }}.
+  „Zurücksetzen“ übernimmt wieder den Wert von dort. Zugangsdaten und Verbindungen (OPNsense, MQTT, Master-Passwort)
+  bleiben {{ "in den Optionen der App" if ha else "in der .env" }}.</p>
+
+<form id="settings-form" class="settings" hx-post="settings" hx-target="#msg" hx-disabled-elt="find button">
+  <div class="form-grid">
+  {% for title, rows in groups %}
+    <fieldset class="panel">
+      <legend class="skip">{{ title }}</legend>
+      <h2>{{ title }}</h2>
+      <div class="setting-rows">
+      {% for r in rows %}
+        <div class="setting{% if r.overridden %} overridden{% endif %}">
+          {% if r.kind == "bool" %}
+          <label class="check"><input type="checkbox" name="{{ r.name }}" value="true"{% if r.value %} checked{% endif %}>
+            <span>{{ r.label }}{% if r.hint %}<small class="hint">{{ r.hint }}</small>{% endif %}</span></label>
+          {% elif r.kind == "choice" %}
+          <label class="field">{{ r.label }}
+            <select name="{{ r.name }}">
+              {% for c in r.choices %}<option value="{{ c }}"{% if c == r.value %} selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+            {% if r.hint %}<small class="hint">{{ r.hint }}</small>{% endif %}
+          </label>
+          {% else %}
+          <label class="field">{{ r.label }}
+            <input name="{{ r.name }}" value="{{ '' if r.value is none else r.value }}" autocomplete="off" spellcheck="false"
+                   {% if r.kind == "number" %}inputmode="decimal"{% endif %}>
+            {% if r.hint %}<small class="hint">{{ r.hint }}</small>{% endif %}
+          </label>
+          {% endif %}
+          {% if r.overridden %}
+          <p class="origin">Geändert – {{ "Optionen" if ha else ".env" }}:
+            <span class="mono">{{ ("an" if r.env_value else "aus") if r.kind == "bool" else ("leer" if r.env_value in (none, "") else r.env_value) }}</span>
+            <button type="submit" class="link" name="reset" value="{{ r.name }}">Zurücksetzen</button></p>
+          {% endif %}
+        </div>
+      {% endfor %}
+      </div>
+    </fieldset>
+  {% endfor %}
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="primary">Speichern</button>
+    <span class="hint">Gilt sofort für neue Vorgänge. Bereits eingerichtete Geräte ändern sich nicht – den NTP-Server
+      verteilt der Button „NTP-Server an alle Geräte verteilen“ in der Geräteliste.</span>
+  </div>
+</form>
+<div id="msg" class="msg" aria-live="polite"></div>
+{% endblock %}

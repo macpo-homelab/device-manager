@@ -20,6 +20,7 @@
       <a href="./" {% if active == "devices" %}aria-current="page"{% endif %}>Geräte</a>
       <a href="provision" {% if active == "provision" %}aria-current="page"{% endif %}>Neues Gerät</a>
       <a href="log" {% if active == "log" %}aria-current="page"{% endif %}>Protokoll</a>
+      <a href="settings" {% if active == "settings" %}aria-current="page"{% endif %}>Einstellungen</a>
     </nav>
   </header>
   <main id="content">{% block content %}{% endblock %}</main>

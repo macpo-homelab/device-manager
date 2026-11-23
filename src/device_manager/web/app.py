@@ -18,10 +18,11 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 
-from ..config import Settings
+from ..config import EDITABLE_GROUPS, Settings
 from ..context import Context
-from ..jobs import Job, JobManager, Progress
+from ..jobs import Job, JobManager, Progress, Retry
 from ..opnsense.client import OPNsenseError
 from ..services import adopt as adopt_svc
 from ..services import certificate, defaults, firmware, identity, inventory, provision, reservation, zigbee
@@ -42,6 +43,18 @@ def log_user_error(request: Request, exc: BaseException) -> str:
     """Fehler einer direkten Aktion loggen (mit Ursachenkette) und die Meldung für die Anzeige liefern."""
     log.warning("Aktion %s %s fehlgeschlagen: %s", request.method, request.url.path, describe_error(exc))
     return str(exc) or type(exc).__name__
+
+
+def _is_bool(name: str) -> bool:
+    return Settings.model_fields[name].annotation is bool
+
+
+def _is_optional(name: str) -> bool:
+    return not Settings.model_fields[name].is_required() and Settings.model_fields[name].default is None
+
+
+def _label(name: str) -> str:
+    return next((f.label for _, group in EDITABLE_GROUPS for f in group if f.name == name), name)
 
 
 templates = Jinja2Templates(directory=str(HERE / "templates"))
@@ -129,6 +142,7 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
                 except ConnectionError as exc:
                     log.warning("%s – Zigbee-Funktionen deaktiviert", exc)
                     owned_bus = None
+        ctx.reload_settings()  # Werte der Seite „Einstellungen“ haben Vorrang
         app.state.ctx = ctx
         app.state.jobs = JobManager(ctx.store)
         yield
@@ -155,9 +169,13 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
         return templates.TemplateResponse(request, name, {"base": base, **data})
 
     def start_job(
-        request: Request, title: str, key: str | None, fn: Callable[[Progress], Awaitable[Any]]
+        request: Request,
+        title: str,
+        key: str | None,
+        fn: Callable[[Progress], Awaitable[Any]],
+        retry: Retry | None = None,
     ) -> HTMLResponse:
-        job = request.app.state.jobs.start(title, key, fn)
+        job = request.app.state.jobs.start(title, key, fn, retry)
         return render(request, "_job.html", job=job)
 
     def device_or_404(request: Request, key: str) -> Any:
@@ -199,8 +217,20 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
             cert=view.cert_state(device),
             entries=view.log_entries(ctx.store.actions(key, limit=5), [device]),
             domain=ctx.settings.dns_domain,
+            settings=ctx.settings,
             default_stage=stage,
         )
+
+    @app.get("/devices/{key}/lease-info", response_class=HTMLResponse)
+    async def lease_info(request: Request, key: str) -> HTMLResponse:
+        """DHCP-Client-ID aus der Kea-Lease (nur lesend), wird im Steckbrief nachgeladen."""
+        device = device_or_404(request, key)
+        try:
+            client_id = await inventory.dhcp_client_id(ctx_of(request), device)
+        except USER_ERRORS as exc:
+            log_user_error(request, exc)
+            client_id = None
+        return render(request, "_lease_info.html", client_id=client_id)
 
     @app.get("/devices/{key}/firmware-info", response_class=HTMLResponse)
     async def firmware_info(request: Request, key: str) -> HTMLResponse:
@@ -235,8 +265,52 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
             host=host,
             domain=s.dns_domain,
             default_stage=s.default_firmware_stage,
-            tz=s.shelly_timezone,
-            ntp=s.shelly_ntp_server,
+            settings=s,
+        )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page(request: Request) -> HTMLResponse:
+        ctx = ctx_of(request)
+        return render(
+            request,
+            "settings.html",
+            active="settings",
+            groups=view.setting_groups(ctx.settings, ctx.base_settings, set(ctx.store.setting_overrides())),
+            ha=bool(os.environ.get("SUPERVISOR_TOKEN")),
+        )
+
+    @app.post("/settings", response_class=HTMLResponse)
+    async def save_settings(request: Request) -> HTMLResponse:
+        ctx = ctx_of(request)
+        form = await request.form()
+        values: dict[str, Any] = {}
+        for _, group in EDITABLE_GROUPS:
+            for f in group:
+                if _is_bool(f.name):
+                    values[f.name] = form.get(f.name) == "true"
+                elif f.name in form:
+                    raw = str(form[f.name]).strip()
+                    values[f.name] = None if raw == "" and _is_optional(f.name) else raw
+        reset = str(form.get("reset", ""))
+        if reset:  # einzelnen Wert auf .env/HA-Optionen zurücksetzen
+            values[reset] = ctx.base_settings.model_dump()[reset]
+        try:
+            ctx.save_settings(values)
+        except ValidationError as exc:
+            problems = "; ".join(
+                f"{_label(str(e['loc'][0])) if e['loc'] else 'Eingabe'}: {e['msg']}" for e in exc.errors()
+            )
+            return render(request, "_message.html", error=f"Nicht gespeichert – {problems}")
+        except ValueError as exc:
+            return render(request, "_message.html", error=f"Nicht gespeichert – {exc}")
+        log.info(
+            "Einstellungen gespeichert: %s", ", ".join(sorted(ctx.store.setting_overrides())) or "keine Abweichungen"
+        )
+        return render(
+            request,
+            "_message.html",
+            message="Zurückgesetzt" if reset else "Einstellungen gespeichert",
+            reload=True,
         )
 
     @app.get("/log", response_class=HTMLResponse)
@@ -309,9 +383,18 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
         return render(request, "_message.html", message=f"{len(found)} Zigbee-Shelly(s) übernommen", reload=True)
 
     @app.post("/adopt", response_class=HTMLResponse)
-    async def adopt(request: Request, host: Annotated[str, Form()]) -> HTMLResponse:
+    async def adopt(
+        request: Request, host: Annotated[str, Form()], current_password: Annotated[str, Form()] = ""
+    ) -> HTMLResponse:
         ctx = ctx_of(request)
-        return start_job(request, f"Übernehmen {host}", None, lambda p: adopt_svc.adopt(ctx, host.strip(), p))
+        host = host.strip()
+        return start_job(
+            request,
+            f"Übernehmen {host}",
+            None,
+            lambda p: adopt_svc.adopt(ctx, host, p, current_password),
+            Retry("adopt", {"host": host}),
+        )
 
     @app.post("/devices/{key}/reserve", response_class=HTMLResponse)
     async def reserve(
@@ -387,6 +470,32 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.post("/devices/{key}/defaults", response_class=HTMLResponse)
+    async def apply_device_defaults(request: Request, key: str, name: Annotated[str, Form()]) -> HTMLResponse:
+        ctx = ctx_of(request)
+        device = device_or_404(request, key)
+        if device.connection == "zigbee" or not device.ip:
+            return render(request, "_message.html", error="Standardwerte nur für WLAN-Geräte mit bekannter IP")
+        host = device.ip
+
+        async def run(p: Progress) -> defaults.DefaultsResult:
+            await identity.verify_inventory_device(ctx, host, device)  # Zugangsdaten nur an das Inventar-Gerät
+            return await defaults.apply_defaults(ctx, host, name, device, p)
+
+        return start_job(request, "Standardwerte setzen", key, run)
+
+    @app.post("/devices/{key}/set-password", response_class=HTMLResponse)
+    async def set_password(request: Request, key: str, current_password: Annotated[str, Form()] = "") -> HTMLResponse:
+        ctx = ctx_of(request)
+        device = device_or_404(request, key)
+        return start_job(
+            request,
+            "Passwort setzen",
+            key,
+            lambda p: identity.set_device_password(ctx, device, current_password, p),
+            Retry(f"devices/{key}/set-password"),
+        )
+
     @app.post("/devices/{key}/rotate-password", response_class=HTMLResponse)
     async def rotate_password(request: Request, key: str) -> HTMLResponse:
         ctx = ctx_of(request)
@@ -410,6 +519,7 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
         update: Annotated[bool, Form()] = False,
         defaults_: Annotated[bool, Form(alias="defaults")] = False,
         certificate_: Annotated[bool, Form(alias="certificate")] = False,
+        current_password: Annotated[str, Form()] = "",
     ) -> HTMLResponse:
         ctx = ctx_of(request)
         return start_job(
@@ -426,7 +536,9 @@ def create_app(settings: Settings, context: Context | None = None) -> FastAPI:
                 defaults=defaults_,
                 certificate=certificate_,
                 progress=p,
+                current_password=current_password,
             ),
+            Retry("provision", include="#provision-form"),
         )
 
     @app.post("/ntp/distribute", response_class=HTMLResponse)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "device-manager"
-version = "0.4.2"
+version = "0.6.0"
 description = "Verwaltung von Shelly-Geräten mit OPNsense- und Zigbee2MQTT-Integration"
 readme = "README.md"
 license = "MIT"

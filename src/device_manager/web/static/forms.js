@@ -129,6 +129,64 @@
     }
   });
 
+  // Passwort: Auge blendet ein/aus (Abruf per htmx nur beim Einblenden), Kopieren holt es per POST
+  document.addEventListener(
+    "click",
+    (event) => {
+      const eye = event.target instanceof Element ? event.target.closest("[data-toggle-password]") : null;
+      if (!eye) return;
+      const shown = document.querySelector(eye.getAttribute("hx-target"));
+      if (shown && shown.childElementCount > 0) {
+        // Schon sichtbar: ausblenden, htmx-Anfrage unterdrücken (Capture-Phase vor dem htmx-Listener)
+        event.stopPropagation();
+        event.preventDefault();
+        shown.replaceChildren();
+        eye.setAttribute("aria-pressed", "false");
+        eye.setAttribute("aria-label", "Passwort anzeigen");
+        eye.title = "Passwort anzeigen";
+      } else {
+        eye.setAttribute("aria-pressed", "true");
+        eye.setAttribute("aria-label", "Passwort ausblenden");
+        eye.title = "Passwort ausblenden";
+      }
+    },
+    true,
+  );
+
+  async function fetchPassword(url) {
+    // POST mit HX-Request wie htmx (Request-Guard); Antwort nicht cachebar
+    const response = await fetch(url, { method: "POST", headers: { "HX-Request": "true" }, cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const code = doc.querySelector("code.secret");
+    if (!code) throw new Error((doc.body.textContent || "").trim() || "kein Passwort");
+    return code.textContent.trim();
+  }
+
+  function flash(button, text, ok) {
+    const label = button.getAttribute("aria-label");
+    button.classList.add(ok ? "done" : "failed");
+    button.setAttribute("aria-label", text);
+    button.title = text;
+    setTimeout(() => {
+      button.classList.remove("done", "failed");
+      button.setAttribute("aria-label", label);
+      button.title = label === "Passwort kopieren" ? "Passwort in die Zwischenablage kopieren" : label;
+    }, 1500);
+  }
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-copy-password]") : null;
+    if (!button) return;
+    try {
+      const password = await fetchPassword(button.getAttribute("data-copy-password"));
+      await navigator.clipboard.writeText(password);
+      flash(button, "Kopiert", true);
+    } catch (err) {
+      flash(button, "Kopieren fehlgeschlagen: " + err.message, false);
+    }
+  });
+
   // Kleine Bedienhelfer: Kopieren, Liste schließen, Ansicht neu laden
   document.addEventListener("click", (event) => {
     const el = event.target instanceof Element ? event.target.closest("[data-copy],[data-dismiss],[data-reload]") : null;

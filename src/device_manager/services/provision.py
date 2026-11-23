@@ -34,13 +34,14 @@ async def provision(
     defaults: bool = True,
     certificate: bool = True,
     progress: Progress = noop_progress,
+    current_password: str = "",
 ) -> ProvisionResult:
     """`name` ist der Gerätename (Groß-/Kleinschreibung bleibt erhalten); der Hostname ist der Name klein."""
     name = validate_name(name)
     with step(f"Neues Gerät {name}"):
         progress("Schritt 1/5: Gerät übernehmen")
         with step("1/5 Übernehmen"):
-            device = await adopt(ctx, host, progress)
+            device = await adopt(ctx, host, progress, current_password)
         assert device.mac
 
         progress("Schritt 2/5: IP-Reservierung")
