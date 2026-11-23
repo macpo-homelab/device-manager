@@ -7,6 +7,7 @@ data/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.vscode/
 build/
 dist/
 addon/device_manager/app/
